@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}Ventas — TiendaDB{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Ventas <span class="badge">JOIN 3 tablas · EXISTS subquery · Transacción</span></h2>
+  <button class="btn btn-primary" onclick="openModal('modal-nueva-venta')">+ Nueva venta</button>
+</div>
+
+<div class="section-card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Fecha</th><th>Cliente</th><th>Empleado</th><th>Items</th><th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in ventas %}
+        <tr>
+          <td>{{ v.id_venta }}</td>
+          <td>{{ v.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ v.cliente }}</td>
+          <td>{{ v.empleado }}</td>
+          <td>{{ v.items }}</td>
+          <td class="money">Q{{ "%.2f"|format(v.total) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">No hay ventas</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal nueva venta -->
+<div id="modal-nueva-venta" class="modal-overlay hidden">
+  <div class="modal modal-lg">
+    <h3 class="modal-title">Registrar Venta</h3>
+    <p class="modal-sub">Esta operación usa una <strong>transacción explícita</strong> con ROLLBACK automático si falla el stock.</p>
+    <form method="POST" action="{{ url_for('venta_nueva') }}">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Cliente *</label>
+          <select name="id_cliente" required>
+            <option value="">— Seleccionar —</option>
+            {% for c in clientes %}
+            <option value="{{ c.id_cliente }}">{{ c.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Empleado *</label>
+          <select name="id_empleado" required>
+            <option value="">— Seleccionar —</option>
+            {% for e in empleados %}
+            <option value="{{ e.id_empleado }}">{{ e.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <h4 style="margin:1rem 0 .5rem">Productos (solo los con stock disponible — EXISTS)</h4>
+      <div id="items-container">
+        <div class="item-row">
+          <select name="producto_id[]" class="item-select" onchange="updateSubtotal(this)">
+            <option value="">— Producto —</option>
+            {% for p in productos %}
+            <option value="{{ p.id_producto }}" data-precio="{{ p.precio }}" data-stock="{{ p.stock }}">
+              {{ p.nombre }} (Q{{ "%.2f"|format(p.precio) }} | stock: {{ p.stock }})
+            </option>
+            {% endfor %}
+          </select>
+          <input type="number" name="cantidad[]" min="1" value="1" class="item-qty"
+                 onchange="updateSubtotal(this)">
+          <span class="item-subtotal">Q0.00</span>
+          <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">✕</button>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm" onclick="addItem()" style="margin-top:.5rem">
+        + Agregar producto
+      </button>
+      <div class="total-line">
+        Total estimado: <strong id="total-display">Q0.00</strong>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-nueva-venta')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar venta</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const productosData = {{ productos | tojson }};
+
+function addItem() {
+  const container = document.getElementById('items-container');
+  const first = container.querySelector('.item-row');
+  const clone  = first.cloneNode(true);
+  clone.querySelector('.item-select').value = '';
+  clone.querySelector('.item-qty').value    = 1;
+  clone.querySelector('.item-subtotal').textContent = 'Q0.00';
+  clone.querySelector('.item-select').addEventListener('change', function(){ updateSubtotal(this); });
+  clone.querySelector('.item-qty').addEventListener('change', function(){ updateSubtotal(this); });
+  container.appendChild(clone);
+}
+
+function removeItem(btn) {
+  const rows = document.querySelectorAll('.item-row');
+  if (rows.length > 1) { btn.closest('.item-row').remove(); recalcTotal(); }
+}
+
+function updateSubtotal(el) {
+  const row    = el.closest('.item-row');
+  const sel    = row.querySelector('.item-select');
+  const qty    = parseFloat(row.querySelector('.item-qty').value) || 0;
+  const opt    = sel.options[sel.selectedIndex];
+  const precio = opt ? parseFloat(opt.dataset.precio || 0) : 0;
+  row.querySelector('.item-subtotal').textContent = 'Q' + (precio * qty).toFixed(2);
+  recalcTotal();
+}
+
+function recalcTotal() {
+  let total = 0;
+  document.querySelectorAll('.item-subtotal').forEach(s => {
+    total += parseFloat(s.textContent.replace('Q','')) || 0;
+  });
+  document.getElementById('total-display').textContent = 'Q' + total.toFixed(2);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Empleados — TiendaDB{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Empleados</h2>
+  <button class="btn btn-primary" onclick="openModal('modal-nuevo-empleado')">+ Nuevo empleado</button>
+</div>
+
+<div class="section-card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>ID</th><th>Nombre</th><th>Cargo</th><th>Email</th><th>Teléfono</th><th>Acciones</th></tr>
+      </thead>
+      <tbody>
+        {% for e in empleados %}
+        <tr>
+          <td>{{ e.id_empleado }}</td>
+          <td>{{ e.nombre }}</td>
+          <td>{{ e.cargo or '—' }}</td>
+          <td>{{ e.email or '—' }}</td>
+          <td>{{ e.telefono or '—' }}</td>
+          <td class="actions">
+            <button class="btn btn-sm" onclick='openEditEmpleado({{ e | tojson }})'>Editar</button>
+            <form method="POST" action="{{ url_for('empleado_eliminar', eid=e.id_empleado) }}"
+                  style="display:inline" onsubmit="return confirm('¿Eliminar empleado?')">
+              <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">No hay empleados</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="modal-nuevo-empleado" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Nuevo Empleado</h3>
+    <form method="POST" action="{{ url_for('empleado_nuevo') }}">
+      <div class="form-row">
+        <div class="form-group"><label>Nombre *</label><input type="text" name="nombre" required></div>
+        <div class="form-group"><label>Cargo</label><input type="text" name="cargo"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Email</label><input type="email" name="email"></div>
+        <div class="form-group"><label>Teléfono</label><input type="text" name="telefono"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-nuevo-empleado')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-editar-empleado" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Editar Empleado</h3>
+    <form id="form-editar-empleado" method="POST">
+      <div class="form-row">
+        <div class="form-group"><label>Nombre *</label><input type="text" name="nombre" id="ee-nombre" required></div>
+        <div class="form-group"><label>Cargo</label><input type="text" name="cargo" id="ee-cargo"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Email</label><input type="email" name="email" id="ee-email"></div>
+        <div class="form-group"><label>Teléfono</label><input type="text" name="telefono" id="ee-telefono"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-editar-empleado')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Actualizar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openEditEmpleado(e) {
+  document.getElementById('ee-nombre').value   = e.nombre;
+  document.getElementById('ee-cargo').value    = e.cargo    || '';
+  document.getElementById('ee-email').value    = e.email    || '';
+  document.getElementById('ee-telefono').value = e.telefono || '';
+  document.getElementById('form-editar-empleado').action = '/empleados/editar/' + e.id_empleado;
+  openModal('modal-editar-empleado');
+}
+</script>
+{% endblock %}

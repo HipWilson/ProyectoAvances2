@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}TiendaDB{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  {% if session.user_id %}
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">◈</span>
+      <span class="brand-text">TiendaDB</span>
+    </div>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">
+        <span class="nav-icon">⬡</span> Dashboard
+      </a></li>
+      <li><a href="{{ url_for('productos') }}" class="{{ 'active' if request.endpoint == 'productos' }}">
+        <span class="nav-icon">⬡</span> Productos
+      </a></li>
+      <li><a href="{{ url_for('clientes') }}" class="{{ 'active' if request.endpoint == 'clientes' }}">
+        <span class="nav-icon">⬡</span> Clientes
+      </a></li>
+      <li><a href="{{ url_for('empleados') }}" class="{{ 'active' if request.endpoint == 'empleados' }}">
+        <span class="nav-icon">⬡</span> Empleados
+      </a></li>
+      <li><a href="{{ url_for('ventas') }}" class="{{ 'active' if request.endpoint == 'ventas' }}">
+        <span class="nav-icon">⬡</span> Ventas
+      </a></li>
+      <li><a href="{{ url_for('reportes') }}" class="{{ 'active' if request.endpoint == 'reportes' }}">
+        <span class="nav-icon">⬡</span> Reportes
+      </a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <span class="user-label">{{ session.username }}</span>
+      <a href="{{ url_for('logout') }}" class="btn-logout">Salir</a>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="{{ 'with-sidebar' if session.user_id else '' }}">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

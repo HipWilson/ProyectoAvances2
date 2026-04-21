@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}Clientes — TiendaDB{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Clientes <span class="badge">Subquery correlacionado</span></h2>
+  <button class="btn btn-primary" onclick="openModal('modal-nuevo-cliente')">+ Nuevo cliente</button>
+</div>
+
+<div class="section-card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th>
+          <th>Compras</th><th>Total gastado</th><th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clientes %}
+        <tr>
+          <td>{{ c.id_cliente }}</td>
+          <td>{{ c.nombre }}</td>
+          <td>{{ c.email or '—' }}</td>
+          <td>{{ c.telefono or '—' }}</td>
+          <td>{{ c.num_compras }}</td>
+          <td class="money">Q{{ "%.2f"|format(c.total_gastado) }}</td>
+          <td class="actions">
+            <button class="btn btn-sm" onclick='openEditCliente({{ c | tojson }})'>Editar</button>
+            <form method="POST" action="{{ url_for('cliente_eliminar', cid=c.id_cliente) }}"
+                  style="display:inline" onsubmit="return confirm('¿Eliminar cliente?')">
+              <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">No hay clientes</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal nuevo -->
+<div id="modal-nuevo-cliente" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Nuevo Cliente</h3>
+    <form method="POST" action="{{ url_for('cliente_nuevo') }}">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input type="text" name="nombre" required>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="email">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" name="telefono">
+        </div>
+        <div class="form-group">
+          <label>Dirección</label>
+          <input type="text" name="direccion">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-nuevo-cliente')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal editar -->
+<div id="modal-editar-cliente" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Editar Cliente</h3>
+    <form id="form-editar-cliente" method="POST">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input type="text" name="nombre" id="ec-nombre" required>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="email" id="ec-email">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" name="telefono" id="ec-telefono">
+        </div>
+        <div class="form-group">
+          <label>Dirección</label>
+          <input type="text" name="direccion" id="ec-direccion">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-editar-cliente')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Actualizar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openEditCliente(c) {
+  document.getElementById('ec-nombre').value    = c.nombre;
+  document.getElementById('ec-email').value     = c.email    || '';
+  document.getElementById('ec-telefono').value  = c.telefono || '';
+  document.getElementById('ec-direccion').value = c.direccion|| '';
+  document.getElementById('form-editar-cliente').action = '/clientes/editar/' + c.id_cliente;
+  openModal('modal-editar-cliente');
+}
+</script>
+{% endblock %}

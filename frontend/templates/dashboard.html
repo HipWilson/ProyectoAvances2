@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — TiendaDB{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Dashboard</h2>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <span class="kpi-label">Total Ventas</span>
+    <span class="kpi-value">{{ total_ventas }}</span>
+  </div>
+  <div class="kpi-card accent">
+    <span class="kpi-label">Ingresos</span>
+    <span class="kpi-value">Q{{ "%.2f"|format(ingresos) }}</span>
+  </div>
+  <div class="kpi-card warn">
+    <span class="kpi-label">Stock Bajo (&lt;10)</span>
+    <span class="kpi-value">{{ stock_bajo }}</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">Clientes</span>
+    <span class="kpi-value">{{ total_clientes }}</span>
+  </div>
+</div>
+
+<div class="section-card">
+  <h3 class="section-title">Últimas ventas <span class="badge">JOIN 3 tablas</span></h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Fecha</th><th>Cliente</th><th>Empleado</th><th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in ultimas_ventas %}
+        <tr>
+          <td>{{ v.id_venta }}</td>
+          <td>{{ v.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ v.cliente }}</td>
+          <td>{{ v.empleado }}</td>
+          <td class="money">Q{{ "%.2f"|format(v.total) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">No hay ventas aún</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

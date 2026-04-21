@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Productos — TiendaDB{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Productos <span class="badge">JOIN categorías + proveedores</span></h2>
+  <button class="btn btn-primary" onclick="openModal('modal-nuevo-producto')">+ Nuevo producto</button>
+</div>
+
+<div class="section-card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Nombre</th><th>Categoría</th><th>Proveedor</th>
+          <th>Precio</th><th>Stock</th><th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in productos %}
+        <tr class="{{ 'row-warn' if p.stock < 10 }}">
+          <td>{{ p.id_producto }}</td>
+          <td>{{ p.nombre }}</td>
+          <td><span class="tag">{{ p.categoria }}</span></td>
+          <td>{{ p.proveedor }}</td>
+          <td class="money">Q{{ "%.2f"|format(p.precio) }}</td>
+          <td>
+            <span class="stock-badge {{ 'low' if p.stock < 10 else 'ok' }}">{{ p.stock }}</span>
+          </td>
+          <td class="actions">
+            <button class="btn btn-sm" onclick='openEditProducto({{ p | tojson }})'>Editar</button>
+            <form method="POST" action="{{ url_for('producto_eliminar', pid=p.id_producto) }}"
+                  style="display:inline" onsubmit="return confirm('¿Eliminar producto?')">
+              <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">No hay productos</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal nuevo producto -->
+<div id="modal-nuevo-producto" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Nuevo Producto</h3>
+    <form method="POST" action="{{ url_for('producto_nuevo') }}">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input type="text" name="nombre" required>
+        </div>
+        <div class="form-group">
+          <label>Precio *</label>
+          <input type="number" name="precio" step="0.01" min="0" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <input type="text" name="descripcion">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Stock *</label>
+          <input type="number" name="stock" min="0" required>
+        </div>
+        <div class="form-group">
+          <label>Categoría *</label>
+          <select name="id_categoria" required>
+            {% for c in categorias %}
+            <option value="{{ c.id_categoria }}">{{ c.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Proveedor *</label>
+          <select name="id_proveedor" required>
+            {% for p in proveedores %}
+            <option value="{{ p.id_proveedor }}">{{ p.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-nuevo-producto')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal editar producto -->
+<div id="modal-editar-producto" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Editar Producto</h3>
+    <form id="form-editar-producto" method="POST">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input type="text" name="nombre" id="edit-nombre" required>
+        </div>
+        <div class="form-group">
+          <label>Precio *</label>
+          <input type="number" name="precio" id="edit-precio" step="0.01" min="0" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <input type="text" name="descripcion" id="edit-descripcion">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Stock *</label>
+          <input type="number" name="stock" id="edit-stock" min="0" required>
+        </div>
+        <div class="form-group">
+          <label>Categoría *</label>
+          <select name="id_categoria" id="edit-categoria" required>
+            {% for c in categorias %}
+            <option value="{{ c.id_categoria }}">{{ c.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Proveedor *</label>
+          <select name="id_proveedor" id="edit-proveedor" required>
+            {% for p in proveedores %}
+            <option value="{{ p.id_proveedor }}">{{ p.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-editar-producto')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Actualizar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openEditProducto(p) {
+  document.getElementById('edit-nombre').value       = p.nombre;
+  document.getElementById('edit-precio').value       = p.precio;
+  document.getElementById('edit-descripcion').value  = p.descripcion || '';
+  document.getElementById('edit-stock').value        = p.stock;
+  document.getElementById('edit-categoria').value    = p.id_categoria;
+  document.getElementById('edit-proveedor').value    = p.id_proveedor;
+  document.getElementById('form-editar-producto').action = '/productos/editar/' + p.id_producto;
+  openModal('modal-editar-producto');
+}
+</script>
+{% endblock %}

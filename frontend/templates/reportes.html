@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Reportes — TiendaDB{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Reportes</h2>
+  <a href="{{ url_for('exportar_csv') }}" class="btn btn-primary">↓ Exportar CSV</a>
+</div>
+
+<!-- Reporte 1: VIEW -->
+<div class="section-card">
+  <h3 class="section-title">Ventas por Producto <span class="badge">VIEW: vista_reporte_ventas</span></h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Producto</th><th>Categoría</th><th>Unidades vendidas</th>
+          <th>Ingresos</th><th>Nº ventas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reporte_productos %}
+        <tr>
+          <td>{{ r.producto }}</td>
+          <td><span class="tag">{{ r.categoria }}</span></td>
+          <td>{{ r.unidades_vendidas }}</td>
+          <td class="money">Q{{ "%.2f"|format(r.ingresos_totales) }}</td>
+          <td>{{ r.num_ventas }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">Sin datos</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Reporte 2: GROUP BY + HAVING -->
+<div class="section-card">
+  <h3 class="section-title">Ingresos por Categoría <span class="badge">GROUP BY + HAVING + AVG</span></h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Categoría</th><th>Nº Ventas</th><th>Total ingresos</th><th>Promedio/item</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reporte_categorias %}
+        <tr>
+          <td>{{ r.categoria }}</td>
+          <td>{{ r.num_ventas }}</td>
+          <td class="money">Q{{ "%.2f"|format(r.total_ingresos) }}</td>
+          <td class="money">Q{{ "%.2f"|format(r.promedio_por_item) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">Sin datos</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Reporte 3: CTE -->
+<div class="section-card">
+  <h3 class="section-title">Top 5 Clientes <span class="badge">CTE (WITH)</span></h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>Cliente</th><th>Nº Compras</th><th>Total gastado</th></tr>
+      </thead>
+      <tbody>
+        {% for c in top_clientes %}
+        <tr>
+          <td>{{ c.nombre }}</td>
+          <td>{{ c.num_compras }}</td>
+          <td class="money">Q{{ "%.2f"|format(c.total_gastado) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="empty">Sin datos</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

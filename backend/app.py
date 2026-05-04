@@ -339,59 +339,65 @@ def ventas():
 @login_required
 def venta_nueva():
     """
-    Crea una venta con TRANSACCIÓN EXPLÍCITA.
+    Crea una venta con TRANSACCIÓN EXPLÍCITA (BEGIN / COMMIT / ROLLBACK).
     Si algo falla (stock insuficiente, etc.) hace ROLLBACK completo.
     """
     id_cliente  = request.form.get('id_cliente')
     id_empleado = request.form.get('id_empleado')
     ids_prod    = request.form.getlist('producto_id[]')
     cantidades  = request.form.getlist('cantidad[]')
-
+ 
     if not id_cliente or not id_empleado or not ids_prod:
         flash('Faltan datos para registrar la venta', 'danger')
         return redirect(url_for('ventas'))
-
+ 
     conn = get_db()
+    conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        # ── BEGIN explícito ──
-        conn.autocommit = False
-
+        cur.execute("BEGIN")   # ── BEGIN EXPLÍCITO ──
+ 
         total = 0.0
         items = []
         for pid, qty in zip(ids_prod, cantidades):
             pid = int(pid); qty = int(qty)
             if qty <= 0:
                 continue
-            cur.execute("SELECT precio, stock, nombre FROM productos WHERE id_producto=%s FOR UPDATE", (pid,))
+            cur.execute(
+                "SELECT precio, stock, nombre FROM productos WHERE id_producto=%s FOR UPDATE",
+                (pid,)
+            )
             prod = cur.fetchone()
             if not prod:
                 raise ValueError(f'Producto {pid} no encontrado')
             if prod['stock'] < qty:
-                raise ValueError(f'Stock insuficiente para "{prod["nombre"]}" '
-                                 f'(disponible: {prod["stock"]}, pedido: {qty})')
+                raise ValueError(
+                    f'Stock insuficiente para "{prod["nombre"]}" '
+                    f'(disponible: {prod["stock"]}, pedido: {qty})'
+                )
             subtotal = round(prod['precio'] * qty, 2)
             total   += subtotal
             items.append((pid, qty, prod['precio'], subtotal))
-
+ 
         if not items:
             raise ValueError('No se seleccionó ningún producto válido')
-
-        # Insertar cabecera de venta
+ 
         cur.execute("""
             INSERT INTO ventas (id_cliente, id_empleado, total)
             VALUES (%s,%s,%s) RETURNING id_venta
         """, (id_cliente, id_empleado, round(total, 2)))
         id_venta = cur.fetchone()['id_venta']
-
+ 
         for pid, qty, precio, subtotal in items:
             cur.execute("""
                 INSERT INTO detalle_venta (id_venta, id_producto, cantidad, precio_unitario, subtotal)
                 VALUES (%s,%s,%s,%s,%s)
             """, (id_venta, pid, qty, precio, subtotal))
-            cur.execute("UPDATE productos SET stock = stock - %s WHERE id_producto = %s",
-                        (qty, pid))
-
+            cur.execute(
+                "UPDATE productos SET stock = stock - %s WHERE id_producto = %s",
+                (qty, pid)
+            )
+ 
         conn.commit()   # ── COMMIT ──
         flash(f'Venta #{id_venta} registrada por Q{total:.2f}', 'success')
     except Exception as e:
@@ -401,7 +407,7 @@ def venta_nueva():
         conn.autocommit = True
         cur.close(); conn.close()
     return redirect(url_for('ventas'))
-
+ 
 # ──────────────────────────────────────────────
 # REPORTES
 # ──────────────────────────────────────────────

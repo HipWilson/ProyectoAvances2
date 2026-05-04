@@ -52,17 +52,11 @@ tienda/
 
 ## I. Diseño de Base de Datos
 
-### Diagrama ER (notación texto)
+### Diagrama ER 
+![alt text](image.png)
 
-```
-CATEGORIAS ──< PRODUCTOS >── PROVEEDORES
-                   │
-                   └──< DETALLE_VENTA >── VENTAS >── CLIENTES
-                                                  └── EMPLEADOS
-
-USUARIOS independiente para autenticación
-```
-
+### Diagrama DDL
+![alt text](<DDL .png>)
 #### Entidades y atributos principales
 
 | Entidad | Atributos clave |

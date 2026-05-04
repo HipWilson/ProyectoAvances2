@@ -9,7 +9,7 @@ Sistema web para gestión de inventario y ventas. Stack: **Python/Flask · Postg
 
 ```bash
 # 1. Clonar el repositorio
-git clone <URL_DEL_REPO>
+git clone <https://github.com/HipWilson/ProyectoAvances2.git>
 cd tienda
 
 # 2. Copiar variables de entorno (ya vienen configuradas)

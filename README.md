@@ -60,7 +60,7 @@ CATEGORIAS ──< PRODUCTOS >── PROVEEDORES
                    └──< DETALLE_VENTA >── VENTAS >── CLIENTES
                                                   └── EMPLEADOS
 
-USUARIOS ndependiente para autenticación
+USUARIOS independiente para autenticación
 ```
 
 #### Entidades y atributos principales
@@ -107,38 +107,128 @@ usuarios     ( id_usuario, username, password_hash, rol )
 
 ### Normalización hasta 3FN
 
-#### Tabla `productos` — ejemplo de aplicación
+#### Tabla `productos`
 
 **1FN:** Todos los atributos son atómicos, no hay grupos repetitivos.
 `(id_producto, nombre, descripcion, precio, stock, id_categoria, id_proveedor)`
 
-**2FN:** La PK es simple, por lo que toda dependencia parcial
-es imposible. Se cumple automáticamente.
+**2FN:** La PK es simple, por lo que toda dependencia parcial es imposible. Se cumple automáticamente.
 
 **3FN:** Verificar que no existan dependencias transitivas:
-- `nombre, precio, stock` dependen solo de `id_producto` 
-- `id_categoria` es FK, no guarda el nombre de la categoría en esta tabla 
-- `id_proveedor` es FK, no guarda datos del proveedor aquí 
+- `nombre, precio, stock` dependen solo de `id_producto` ✓
+- `id_categoria` es FK, no guarda el nombre de la categoría en esta tabla ✓
+- `id_proveedor` es FK, no guarda datos del proveedor aquí ✓
 
 **→ La tabla está en 3FN.**
 
-#### Tabla `detalle_venta` — verificación
+---
 
-**1FN:** Atributos atómicos, sin multivaluados 
+#### Tabla `detalle_venta`
 
-**2FN:** PK es `id_detalle`, Sin dependencias parciales 
+**1FN:** Atributos atómicos, sin multivaluados ✓
 
-**3FN:** `precio_unitario` se copia al momento de la venta.
-No depende de `id_producto` directamente en esta tabla, 
-es un dato capturado en el momento de la transacción, no derivado. 
-`subtotal = cantidad × precio_unitario` es un atributo calculado que se
-almacena por eficiencia en reportes.
+**2FN:** PK es `id_detalle`. Sin dependencias parciales ✓
+
+**3FN:** `precio_unitario` se copia al momento de la venta. No depende de `id_producto` directamente en esta tabla, es un dato capturado en el momento de la transacción, no derivado. `subtotal = cantidad × precio_unitario` es un atributo calculado que se almacena por eficiencia en reportes.
+
+**→ La tabla está en 3FN.**
+
+---
+
+#### Tabla `ventas`
+
+**Atributos:** (id_venta, fecha, total, id_cliente, id_empleado)
+
+**1FN:** Todos los atributos son atómicos. No hay grupos repetitivos. ✓
+
+**2FN:** PK simple (`id_venta`), por lo que no existen dependencias parciales posibles. ✓
+
+**3FN:** `fecha` y `total` dependen únicamente de `id_venta`. `id_cliente` e `id_empleado` son FK — no almacenan datos del cliente ni del empleado en esta tabla. Sin dependencias transitivas.
+
+**→ `ventas` está en 3FN.** ✓
+
+---
+
+#### Tabla `clientes`
+
+**Atributos:** (id_cliente, nombre, email, telefono, direccion)
+
+**1FN:** Atributos atómicos. `direccion` es texto libre — no se descompone porque el negocio no requiere consultas por componente. ✓
+
+**2FN:** PK simple → no hay dependencias parciales. ✓
+
+**3FN:** `nombre`, `email`, `telefono`, `direccion` dependen directamente de `id_cliente`. Ningún atributo depende de otro atributo no clave.
+
+**→ `clientes` está en 3FN.** ✓
+
+---
+
+#### Tabla `proveedores`
+
+**Atributos:** (id_proveedor, nombre, telefono, email, direccion)
+
+**1FN:** Atributos atómicos, sin multivaluados. ✓
+
+**2FN:** PK simple → no hay dependencias parciales. ✓
+
+**3FN:** `nombre`, `telefono`, `email`, `direccion` dependen únicamente de `id_proveedor`. Sin dependencias transitivas.
+
+**→ `proveedores` está en 3FN.** ✓
+
+---
+
+#### Tabla `empleados`
+
+**Atributos:** (id_empleado, nombre, cargo, email, telefono)
+
+**1FN:** Atributos atómicos. ✓
+
+**2FN:** PK simple → sin dependencias parciales. ✓
+
+**3FN:** `cargo` depende de `id_empleado`, no de ningún otro atributo no clave. No existe tabla separada de cargos porque el dominio no requiere gestionar cargos como entidad independiente.
+
+**→ `empleados` está en 3FN.** ✓
+
+---
+
+#### Tabla `categorias`
+
+**Atributos:** (id_categoria, nombre, descripcion)
+
+**1FN → 3FN:** PK simple, atributos atómicos, `nombre` y `descripcion` dependen únicamente de `id_categoria`. Sin dependencias transitivas.
+
+**→ `categorias` está en 3FN.** ✓
+
+---
+
+#### Tabla `usuarios`
+
+**Atributos:** (id_usuario, username, password_hash, rol)
+
+**1FN → 3FN:** `username` es UNIQUE (clave candidata alternativa). `password_hash` y `rol` dependen de `id_usuario`. Sin dependencias transitivas.
+
+**→ `usuarios` está en 3FN.** ✓
+
+---
+
+### Resumen de dependencias funcionales
+
+| Tabla | Dependencias funcionales |
+|-------|--------------------------|
+| categorias | id_categoria → nombre, descripcion |
+| proveedores | id_proveedor → nombre, telefono, email, direccion |
+| productos | id_producto → nombre, descripcion, precio, stock, id_categoria, id_proveedor |
+| empleados | id_empleado → nombre, cargo, email, telefono |
+| clientes | id_cliente → nombre, email, telefono, direccion |
+| ventas | id_venta → fecha, total, id_cliente, id_empleado |
+| detalle_venta | id_detalle → id_venta, id_producto, cantidad, precio_unitario, subtotal |
+| usuarios | id_usuario → username, password_hash, rol |
 
 ---
 
 ## II. SQL — Consultas implementadas en la UI
 
-Todas las consultas se ejecutan desde la aplicación web
+Todas las consultas se ejecutan desde la aplicación web.
 
 ### JOINs (3 consultas)
 
@@ -182,13 +272,19 @@ SELECT c.*,
 FROM clientes c
 ```
 
-**EXISTS: Ventas:** Productos disponibles para nueva venta 
+**Subquery IN: Ventas:** Productos con stock disponible vendidos en los últimos 6 meses
 ```sql
-SELECT p.* FROM productos p
-WHERE EXISTS (
-  SELECT 1 FROM productos p2
-  WHERE p2.id_producto = p.id_producto AND p2.stock > 0
-)
+SELECT p.*, c.nombre AS categoria
+FROM productos p
+JOIN categorias c ON c.id_categoria = p.id_categoria
+WHERE p.stock > 0
+  AND p.id_producto IN (
+      SELECT DISTINCT dv.id_producto
+      FROM detalle_venta dv
+      JOIN ventas v ON v.id_venta = dv.id_venta
+      WHERE v.fecha >= NOW() - INTERVAL '6 months'
+  )
+ORDER BY p.nombre
 ```
 
 ### GROUP BY + HAVING + Agregación: Reportes
@@ -241,7 +337,8 @@ GROUP BY p.id_producto, p.nombre, c.nombre
 En `POST /ventas/nueva` (archivo `backend/app.py`):
 
 ```python
-conn.autocommit = False          # BEGIN implícito
+conn.autocommit = False
+cur.execute("BEGIN")             # BEGIN explícito
 try:
     # Verificar stock con FOR UPDATE (bloqueo)
     # INSERT ventas
@@ -268,7 +365,7 @@ except Exception as e:
 ### Reportes visibles en UI
 
 - `/reportes`: Ventas por producto (VIEW), ingresos por categoría (GROUP BY/HAVING), top 5 clientes (CTE)
-- `/reportes/exportar-csv`:  Descarga el reporte de ventas como CSV
+- `/reportes/exportar-csv`: Descarga el reporte de ventas como CSV
 
 ### Manejo de errores
 

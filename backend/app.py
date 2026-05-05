@@ -375,7 +375,7 @@ def venta_nueva():
                     f'Stock insuficiente para "{prod["nombre"]}" '
                     f'(disponible: {prod["stock"]}, pedido: {qty})'
                 )
-            subtotal = round(prod['precio'] * qty, 2)
+            subtotal = round(float(prod['precio']) * qty, 2)
             total   += subtotal
             items.append((pid, qty, prod['precio'], subtotal))
  

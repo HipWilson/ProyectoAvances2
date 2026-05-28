@@ -1,31 +1,91 @@
 import os
 import csv
 import io
+import json
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, jsonify, Response)
+                   session, flash, Response)
 import psycopg2
 import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
-
-app = Flask(__name__, template_folder='../frontend/templates',
-            static_folder='../frontend/static')
-app.secret_key = os.environ.get('SECRET_KEY', 'clave-super-secreta-cambiar')
+from sqlalchemy import text
+from models import db, Categoria, Proveedor, Producto, Empleado, Cliente, Usuario, Venta, DetalleVenta
 
 # ──────────────────────────────────────────────
-# Conexión a la base de datos
+# App & ORM setup
+# ──────────────────────────────────────────────
+app = Flask(__name__, template_folder='../frontend/templates',
+            static_folder='../frontend/static')
+
+app.secret_key = os.environ.get('SECRET_KEY', 'clave-super-secreta-cambiar')
+
+DB_HOST = os.environ.get('DB_HOST', 'db')
+DB_PORT = os.environ.get('DB_PORT', '5432')
+DB_NAME = os.environ.get('DB_NAME', 'tiendadb')
+DB_USER = os.environ.get('DB_USER', 'proy3')
+DB_PASS = os.environ.get('DB_PASSWORD', 'secret')
+
+app.config['SQLALCHEMY_DATABASE_URI'] = (
+    f'postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+
+# ──────────────────────────────────────────────
+# Conexión raw psycopg2 (para stored procedures)
 # ──────────────────────────────────────────────
 def get_db():
     return psycopg2.connect(
-        host=os.environ.get('DB_HOST', 'db'),
-        port=os.environ.get('DB_PORT', '5432'),
-        dbname=os.environ.get('DB_NAME', 'tiendadb'),
-        user=os.environ.get('DB_USER', 'proy2'),
-        password=os.environ.get('DB_PASSWORD', 'secret')
+        host=DB_HOST, port=DB_PORT,
+        dbname=DB_NAME, user=DB_USER, password=DB_PASS
     )
 
 # ──────────────────────────────────────────────
-# Decorador de autenticación
+# Permisos por rol
+# ──────────────────────────────────────────────
+# Define qué rutas (endpoints) puede acceder cada rol
+ROL_PERMISOS = {
+    'admin': {
+        'dashboard', 'productos', 'producto_nuevo', 'producto_editar', 'producto_eliminar',
+        'clientes', 'cliente_nuevo', 'cliente_editar', 'cliente_eliminar',
+        'empleados', 'empleado_nuevo', 'empleado_editar', 'empleado_eliminar',
+        'ventas', 'venta_nueva',
+        'reportes', 'exportar_csv',
+        'inventario', 'ajustar_stock', 'transferir_stock',
+    },
+    'supervisor': {
+        'dashboard',
+        'productos', 'producto_nuevo', 'producto_editar',
+        'clientes', 'cliente_nuevo', 'cliente_editar',
+        'empleados', 'empleado_nuevo', 'empleado_editar',
+        'ventas',
+        'reportes', 'exportar_csv',
+        'inventario', 'ajustar_stock', 'transferir_stock',
+    },
+    'vendedor': {
+        'dashboard',
+        'productos',
+        'clientes', 'cliente_nuevo', 'cliente_editar',
+        'ventas', 'venta_nueva',
+    },
+    'bodeguero': {
+        'dashboard',
+        'productos',
+        'inventario', 'ajustar_stock', 'transferir_stock',
+        'ventas',
+    },
+    'reportes': {
+        'dashboard',
+        'reportes', 'exportar_csv',
+        'productos',
+        'clientes',
+        'ventas',
+    },
+}
+
+# ──────────────────────────────────────────────
+# Decoradores
 # ──────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
@@ -35,24 +95,61 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def rol_required(*roles_permitidos):
+    """Permite acceso solo a los roles especificados."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if 'user_id' not in session:
+                return redirect(url_for('login'))
+            rol_actual = session.get('rol', '')
+            if rol_actual not in roles_permitidos:
+                flash(f'Acceso denegado: tu rol ({rol_actual}) no tiene permiso para esta acción.', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
+def puede_acceder(endpoint):
+    """Verifica si el usuario en sesión puede acceder al endpoint dado."""
+    rol = session.get('rol', '')
+    return endpoint in ROL_PERMISOS.get(rol, set())
+
+# Hacer disponible en templates
+app.jinja_env.globals['puede_acceder'] = puede_acceder
+
 # ──────────────────────────────────────────────
-# Crear admin por defecto al arrancar
+# Inicializar usuarios de prueba con hashes reales
 # ──────────────────────────────────────────────
-def init_admin():
+def init_usuarios():
+    """Crea/actualiza los usuarios de prueba con contraseñas hasheadas reales."""
+    usuarios_prueba = [
+        ('admin',             'admin123',   'admin'),
+        ('admin_usuario',     'secret123',  'admin'),
+        ('supervisor_usuario','secret123',  'supervisor'),
+        ('vendedor_usuario',  'secret123',  'vendedor'),
+        ('bodeguero_usuario', 'secret123',  'bodeguero'),
+        ('reportes_usuario',  'secret123',  'reportes'),
+    ]
     try:
-        conn = get_db()
-        cur  = conn.cursor()
-        cur.execute("SELECT id_usuario FROM usuarios WHERE username = 'admin'")
-        if not cur.fetchone():
-            cur.execute(
-                "INSERT INTO usuarios (username, password_hash, rol) VALUES (%s, %s, %s)",
-                ('admin', generate_password_hash('admin123'), 'admin')
-            )
-            conn.commit()
-        cur.close()
-        conn.close()
+        with app.app_context():
+            for username, password, rol in usuarios_prueba:
+                u = Usuario.query.filter_by(username=username).first()
+                if not u:
+                    nuevo = Usuario(
+                        username=username,
+                        password_hash=generate_password_hash(password),
+                        rol=rol
+                    )
+                    db.session.add(nuevo)
+                else:
+                    # Actualizar hash si el guardado en seed es placeholder
+                    if not u.password_hash.startswith('scrypt') and not u.password_hash.startswith('pbkdf2'):
+                        u.password_hash = generate_password_hash(password)
+            db.session.commit()
+            print('Usuarios de prueba inicializados correctamente.')
     except Exception as e:
-        print(f"Error creando admin: {e}")
+        print(f'Error inicializando usuarios: {e}')
 
 # ──────────────────────────────────────────────
 # AUTH
@@ -62,15 +159,12 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        conn = get_db()
-        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM usuarios WHERE username = %s", (username,))
-        user = cur.fetchone()
-        cur.close(); conn.close()
-        if user and check_password_hash(user['password_hash'], password):
-            session['user_id']  = user['id_usuario']
-            session['username'] = user['username']
-            session['rol']      = user['rol']
+        # ORM - CRUD operación 1: READ usuario
+        u = Usuario.query.filter_by(username=username).first()
+        if u and check_password_hash(u.password_hash, password):
+            session['user_id']  = u.id_usuario
+            session['username'] = u.username
+            session['rol']      = u.rol
             return redirect(url_for('dashboard'))
         flash('Usuario o contraseña incorrectos', 'danger')
     return render_template('login.html')
@@ -88,32 +182,23 @@ def logout():
 def dashboard():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-    # KPIs simples
     cur.execute("SELECT COUNT(*) AS total FROM ventas")
     total_ventas = cur.fetchone()['total']
-
     cur.execute("SELECT COALESCE(SUM(total),0) AS suma FROM ventas")
     ingresos = cur.fetchone()['suma']
-
     cur.execute("SELECT COUNT(*) AS total FROM productos WHERE stock < 10")
     stock_bajo = cur.fetchone()['total']
-
     cur.execute("SELECT COUNT(*) AS total FROM clientes")
     total_clientes = cur.fetchone()['total']
-
-    # ── JOIN 1: últimas 5 ventas con nombre de cliente y empleado ──
     cur.execute("""
         SELECT v.id_venta, v.fecha, v.total,
                c.nombre AS cliente, e.nombre AS empleado
         FROM ventas v
         JOIN clientes  c ON c.id_cliente  = v.id_cliente
         JOIN empleados e ON e.id_empleado = v.id_empleado
-        ORDER BY v.fecha DESC
-        LIMIT 5
+        ORDER BY v.fecha DESC LIMIT 5
     """)
     ultimas_ventas = cur.fetchall()
-
     cur.close(); conn.close()
     return render_template('dashboard.html',
                            total_ventas=total_ventas,
@@ -123,14 +208,13 @@ def dashboard():
                            ultimas_ventas=ultimas_ventas)
 
 # ──────────────────────────────────────────────
-# PRODUCTOS  (CRUD completo)
+# PRODUCTOS  (ORM para CREATE, UPDATE, DELETE)
 # ──────────────────────────────────────────────
 @app.route('/productos')
 @login_required
 def productos():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    # ── JOIN 2: productos con categoría y proveedor ──
     cur.execute("""
         SELECT p.*, c.nombre AS categoria, pr.nombre AS proveedor
         FROM productos p
@@ -139,11 +223,10 @@ def productos():
         ORDER BY p.id_producto
     """)
     productos_list = cur.fetchall()
-    cur.execute("SELECT * FROM categorias ORDER BY nombre")
-    categorias = cur.fetchall()
-    cur.execute("SELECT * FROM proveedores ORDER BY nombre")
-    proveedores = cur.fetchall()
     cur.close(); conn.close()
+    # ORM - CRUD operación 2: READ categorias y proveedores
+    categorias  = Categoria.query.order_by(Categoria.nombre).all()
+    proveedores = Proveedor.query.order_by(Proveedor.nombre).all()
     return render_template('productos.html',
                            productos=productos_list,
                            categorias=categorias,
@@ -151,21 +234,26 @@ def productos():
 
 @app.route('/productos/nuevo', methods=['POST'])
 @login_required
+@rol_required('admin', 'supervisor')
 def producto_nuevo():
     d = request.form
     if not d.get('nombre') or not d.get('precio') or not d.get('stock'):
         flash('Nombre, precio y stock son obligatorios', 'danger')
         return redirect(url_for('productos'))
+    # Usar stored procedure sp_crear_producto
     conn = get_db()
-    cur  = conn.cursor()
+    conn.autocommit = False
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("""
-            INSERT INTO productos (nombre, descripcion, precio, stock, id_categoria, id_proveedor)
-            VALUES (%s,%s,%s,%s,%s,%s)
-        """, (d['nombre'], d.get('descripcion'), float(d['precio']),
-              int(d['stock']), int(d['id_categoria']), int(d['id_proveedor'])))
+        cur.execute("BEGIN")
+        cur.execute(
+            "SELECT * FROM sp_crear_producto(%s,%s,%s,%s,%s,%s)",
+            (d['nombre'], d.get('descripcion'), float(d['precio']),
+             int(d['stock']), int(d['id_categoria']), int(d['id_proveedor']))
+        )
+        result = cur.fetchone()
         conn.commit()
-        flash('Producto creado correctamente', 'success')
+        flash(result['p_mensaje'], 'success')
     except Exception as e:
         conn.rollback()
         flash(f'Error: {e}', 'danger')
@@ -175,58 +263,54 @@ def producto_nuevo():
 
 @app.route('/productos/editar/<int:pid>', methods=['POST'])
 @login_required
+@rol_required('admin', 'supervisor')
 def producto_editar(pid):
     d = request.form
-    conn = get_db()
-    cur  = conn.cursor()
+    # ORM - CRUD operación 3: UPDATE producto
     try:
-        cur.execute("""
-            UPDATE productos
-            SET nombre=%s, descripcion=%s, precio=%s, stock=%s,
-                id_categoria=%s, id_proveedor=%s
-            WHERE id_producto=%s
-        """, (d['nombre'], d.get('descripcion'), float(d['precio']),
-              int(d['stock']), int(d['id_categoria']), int(d['id_proveedor']), pid))
-        conn.commit()
+        p = Producto.query.get_or_404(pid)
+        p.nombre       = d['nombre']
+        p.descripcion  = d.get('descripcion')
+        p.precio       = float(d['precio'])
+        p.stock        = int(d['stock'])
+        p.id_categoria = int(d['id_categoria'])
+        p.id_proveedor = int(d['id_proveedor'])
+        db.session.commit()
         flash('Producto actualizado', 'success')
     except Exception as e:
-        conn.rollback()
+        db.session.rollback()
         flash(f'Error: {e}', 'danger')
-    finally:
-        cur.close(); conn.close()
     return redirect(url_for('productos'))
 
 @app.route('/productos/eliminar/<int:pid>', methods=['POST'])
 @login_required
+@rol_required('admin')
 def producto_eliminar(pid):
-    conn = get_db()
-    cur  = conn.cursor()
+    # ORM - CRUD operación 4: DELETE producto
     try:
-        cur.execute("DELETE FROM productos WHERE id_producto=%s", (pid,))
-        conn.commit()
+        p = Producto.query.get_or_404(pid)
+        db.session.delete(p)
+        db.session.commit()
         flash('Producto eliminado', 'success')
     except Exception as e:
-        conn.rollback()
+        db.session.rollback()
         flash(f'Error al eliminar (¿tiene ventas asociadas?): {e}', 'danger')
-    finally:
-        cur.close(); conn.close()
     return redirect(url_for('productos'))
 
 # ──────────────────────────────────────────────
-# CLIENTES  (CRUD completo)
+# CLIENTES  (ORM para CREATE y UPDATE)
 # ──────────────────────────────────────────────
 @app.route('/clientes')
 @login_required
+@rol_required('admin', 'supervisor', 'vendedor', 'reportes')
 def clientes():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    # ── Subquery: clientes que han realizado al menos 1 venta ──
     cur.execute("""
         SELECT c.*,
                (SELECT COUNT(*) FROM ventas v WHERE v.id_cliente = c.id_cliente) AS num_compras,
                (SELECT COALESCE(SUM(v.total),0) FROM ventas v WHERE v.id_cliente = c.id_cliente) AS total_gastado
-        FROM clientes c
-        ORDER BY c.nombre
+        FROM clientes c ORDER BY c.nombre
     """)
     clientes_list = cur.fetchall()
     cur.close(); conn.close()
@@ -234,40 +318,57 @@ def clientes():
 
 @app.route('/clientes/nuevo', methods=['POST'])
 @login_required
+@rol_required('admin', 'supervisor', 'vendedor')
 def cliente_nuevo():
     d = request.form
     if not d.get('nombre'):
         flash('El nombre es obligatorio', 'danger')
         return redirect(url_for('clientes'))
-    conn = get_db()
-    cur  = conn.cursor()
+    # ORM - CRUD operación 5: CREATE cliente
     try:
-        cur.execute("""
-            INSERT INTO clientes (nombre, email, telefono, direccion)
-            VALUES (%s,%s,%s,%s)
-        """, (d['nombre'], d.get('email'), d.get('telefono'), d.get('direccion')))
-        conn.commit()
+        c = Cliente(nombre=d['nombre'], email=d.get('email'),
+                    telefono=d.get('telefono'), direccion=d.get('direccion'))
+        db.session.add(c)
+        db.session.commit()
         flash('Cliente creado', 'success')
     except Exception as e:
-        conn.rollback()
+        db.session.rollback()
         flash(f'Error: {e}', 'danger')
-    finally:
-        cur.close(); conn.close()
     return redirect(url_for('clientes'))
 
 @app.route('/clientes/editar/<int:cid>', methods=['POST'])
 @login_required
+@rol_required('admin', 'supervisor', 'vendedor')
 def cliente_editar(cid):
     d = request.form
-    conn = get_db()
-    cur  = conn.cursor()
+    # ORM - CRUD operación 6: UPDATE cliente
     try:
-        cur.execute("""
-            UPDATE clientes SET nombre=%s, email=%s, telefono=%s, direccion=%s
-            WHERE id_cliente=%s
-        """, (d['nombre'], d.get('email'), d.get('telefono'), d.get('direccion'), cid))
-        conn.commit()
+        c = Cliente.query.get_or_404(cid)
+        c.nombre    = d['nombre']
+        c.email     = d.get('email')
+        c.telefono  = d.get('telefono')
+        c.direccion = d.get('direccion')
+        db.session.commit()
         flash('Cliente actualizado', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {e}', 'danger')
+    return redirect(url_for('clientes'))
+
+@app.route('/clientes/eliminar/<int:cid>', methods=['POST'])
+@login_required
+@rol_required('admin')
+def cliente_eliminar(cid):
+    # Usar stored procedure sp_eliminar_cliente (con validación de ventas)
+    conn = get_db()
+    conn.autocommit = False
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("BEGIN")
+        cur.execute("SELECT * FROM sp_eliminar_cliente(%s)", (cid,))
+        result = cur.fetchone()
+        conn.commit()
+        flash(result['p_mensaje'], 'success')
     except Exception as e:
         conn.rollback()
         flash(f'Error: {e}', 'danger')
@@ -275,35 +376,18 @@ def cliente_editar(cid):
         cur.close(); conn.close()
     return redirect(url_for('clientes'))
 
-@app.route('/clientes/eliminar/<int:cid>', methods=['POST'])
-@login_required
-def cliente_eliminar(cid):
-    conn = get_db()
-    cur  = conn.cursor()
-    try:
-        cur.execute("DELETE FROM clientes WHERE id_cliente=%s", (cid,))
-        conn.commit()
-        flash('Cliente eliminado', 'success')
-    except Exception as e:
-        conn.rollback()
-        flash(f'Error al eliminar (¿tiene ventas?): {e}', 'danger')
-    finally:
-        cur.close(); conn.close()
-    return redirect(url_for('clientes'))
-
 # ──────────────────────────────────────────────
-# VENTAS  (crear con transacción explícita)
+# VENTAS (stored procedure sp_registrar_venta)
 # ──────────────────────────────────────────────
 @app.route('/ventas')
 @login_required
+@rol_required('admin', 'supervisor', 'vendedor', 'bodeguero', 'reportes')
 def ventas():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    # ── JOIN 3: ventas con cliente, empleado y cantidad de items ──
     cur.execute("""
         SELECT v.id_venta, v.fecha, v.total,
-               c.nombre  AS cliente,
-               e.nombre  AS empleado,
+               c.nombre AS cliente, e.nombre AS empleado,
                COUNT(dv.id_detalle) AS items
         FROM ventas v
         JOIN clientes  c  ON c.id_cliente  = v.id_cliente
@@ -313,120 +397,223 @@ def ventas():
         ORDER BY v.fecha DESC
     """)
     ventas_list = cur.fetchall()
-
-    cur.execute("SELECT * FROM clientes  ORDER BY nombre")
-    clientes    = cur.fetchall()
-    cur.execute("SELECT * FROM empleados ORDER BY nombre")
-    empleados   = cur.fetchall()
-    # ── Subquery EXISTS: productos disponibles (stock > 0) ──
-    cur.execute("""
-        SELECT p.*, c.nombre AS categoria
-        FROM productos p
-        JOIN categorias c ON c.id_categoria = p.id_categoria
-        WHERE EXISTS (SELECT 1 FROM productos p2
-                      WHERE p2.id_producto = p.id_producto AND p2.stock > 0)
-        ORDER BY p.nombre
-    """)
-    productos   = cur.fetchall()
     cur.close(); conn.close()
+    # ORM para listas de selección
+    clientes_list  = Cliente.query.order_by(Cliente.nombre).all()
+    empleados_list = Empleado.query.order_by(Empleado.nombre).all()
+    productos_list = Producto.query.filter(Producto.stock > 0).order_by(Producto.nombre).all()
     return render_template('ventas.html',
                            ventas=ventas_list,
-                           clientes=clientes,
-                           empleados=empleados,
-                           productos=productos)
+                           clientes=clientes_list,
+                           empleados=empleados_list,
+                           productos=productos_list)
 
 @app.route('/ventas/nueva', methods=['POST'])
 @login_required
+@rol_required('admin', 'supervisor', 'vendedor')
 def venta_nueva():
-    """
-    Crea una venta con TRANSACCIÓN EXPLÍCITA (BEGIN / COMMIT / ROLLBACK).
-    Si algo falla (stock insuficiente, etc.) hace ROLLBACK completo.
-    """
+    """Registra venta llamando al stored procedure sp_registrar_venta con transacción explícita."""
     id_cliente  = request.form.get('id_cliente')
     id_empleado = request.form.get('id_empleado')
     ids_prod    = request.form.getlist('producto_id[]')
     cantidades  = request.form.getlist('cantidad[]')
- 
+
     if not id_cliente or not id_empleado or not ids_prod:
         flash('Faltan datos para registrar la venta', 'danger')
         return redirect(url_for('ventas'))
- 
+
+    # Construir JSON de items para el SP
+    items = []
+    for pid, qty in zip(ids_prod, cantidades):
+        try:
+            qty_int = int(qty)
+            if qty_int > 0:
+                items.append({'id_producto': int(pid), 'cantidad': qty_int})
+        except ValueError:
+            pass
+
+    if not items:
+        flash('No se seleccionó ningún producto válido', 'danger')
+        return redirect(url_for('ventas'))
+
     conn = get_db()
     conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute("BEGIN")   # ── BEGIN EXPLÍCITO ──
- 
-        total = 0.0
-        items = []
-        for pid, qty in zip(ids_prod, cantidades):
-            pid = int(pid); qty = int(qty)
-            if qty <= 0:
-                continue
-            cur.execute(
-                "SELECT precio, stock, nombre FROM productos WHERE id_producto=%s FOR UPDATE",
-                (pid,)
-            )
-            prod = cur.fetchone()
-            if not prod:
-                raise ValueError(f'Producto {pid} no encontrado')
-            if prod['stock'] < qty:
-                raise ValueError(
-                    f'Stock insuficiente para "{prod["nombre"]}" '
-                    f'(disponible: {prod["stock"]}, pedido: {qty})'
-                )
-            subtotal = round(float(prod['precio']) * qty, 2)
-            total   += subtotal
-            items.append((pid, qty, prod['precio'], subtotal))
- 
-        if not items:
-            raise ValueError('No se seleccionó ningún producto válido')
- 
-        cur.execute("""
-            INSERT INTO ventas (id_cliente, id_empleado, total)
-            VALUES (%s,%s,%s) RETURNING id_venta
-        """, (id_cliente, id_empleado, round(total, 2)))
-        id_venta = cur.fetchone()['id_venta']
- 
-        for pid, qty, precio, subtotal in items:
-            cur.execute("""
-                INSERT INTO detalle_venta (id_venta, id_producto, cantidad, precio_unitario, subtotal)
-                VALUES (%s,%s,%s,%s,%s)
-            """, (id_venta, pid, qty, precio, subtotal))
-            cur.execute(
-                "UPDATE productos SET stock = stock - %s WHERE id_producto = %s",
-                (qty, pid)
-            )
- 
-        conn.commit()   # ── COMMIT ──
-        flash(f'Venta #{id_venta} registrada por Q{total:.2f}', 'success')
+        cur.execute(
+            "SELECT * FROM sp_registrar_venta(%s, %s, %s)",
+            (int(id_cliente), int(id_empleado), json.dumps(items))
+        )
+        result = cur.fetchone()
+        conn.commit()          # ── COMMIT ──
+        flash(result['p_mensaje'], 'success')
     except Exception as e:
-        conn.rollback()  # ── ROLLBACK ──
-        flash(f'Error al registrar venta (se canceló): {e}', 'danger')
+        conn.rollback()        # ── ROLLBACK ──
+        msg = str(e)
+        if 'ERROR:' in msg:
+            msg = msg.split('ERROR:')[-1].strip()
+        flash(f'Error al registrar venta (se canceló): {msg}', 'danger')
     finally:
         conn.autocommit = True
         cur.close(); conn.close()
     return redirect(url_for('ventas'))
- 
+
+# ──────────────────────────────────────────────
+# INVENTARIO (solo bodeguero y admin/supervisor)
+# ──────────────────────────────────────────────
+@app.route('/inventario')
+@login_required
+@rol_required('admin', 'supervisor', 'bodeguero')
+def inventario():
+    # ORM - CRUD operación 7: READ productos para inventario
+    productos_list = Producto.query.join(Categoria).join(Proveedor)\
+        .order_by(Producto.nombre).all()
+    return render_template('inventario.html', productos=productos_list)
+
+@app.route('/inventario/ajustar', methods=['POST'])
+@login_required
+@rol_required('admin', 'supervisor', 'bodeguero')
+def ajustar_stock():
+    """Ajusta stock llamando al stored procedure sp_ajustar_stock."""
+    id_producto = request.form.get('id_producto')
+    cantidad    = request.form.get('cantidad')
+    motivo      = request.form.get('motivo', 'Ajuste manual')
+
+    conn = get_db()
+    conn.autocommit = False
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("BEGIN")
+        cur.execute(
+            "SELECT * FROM sp_ajustar_stock(%s, %s, %s)",
+            (int(id_producto), int(cantidad), motivo)
+        )
+        result = cur.fetchone()
+        conn.commit()
+        flash(result['p_mensaje'], 'success')
+    except Exception as e:
+        conn.rollback()
+        msg = str(e).split('ERROR:')[-1].strip()
+        flash(f'Error al ajustar stock: {msg}', 'danger')
+    finally:
+        conn.autocommit = True
+        cur.close(); conn.close()
+    return redirect(url_for('inventario'))
+
+@app.route('/inventario/transferir', methods=['POST'])
+@login_required
+@rol_required('admin', 'supervisor', 'bodeguero')
+def transferir_stock():
+    """Transfiere stock entre productos usando sp_transferir_stock (con ROLLBACK)."""
+    id_origen  = request.form.get('id_origen')
+    id_destino = request.form.get('id_destino')
+    cantidad   = request.form.get('cantidad')
+
+    conn = get_db()
+    conn.autocommit = False
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("BEGIN")
+        cur.execute(
+            "SELECT sp_transferir_stock(%s, %s, %s) AS p_mensaje",
+            (int(id_origen), int(id_destino), int(cantidad))
+        )
+        result = cur.fetchone()
+        conn.commit()
+        flash(result['p_mensaje'], 'success')
+    except Exception as e:
+        conn.rollback()
+        msg = str(e).split('ERROR:')[-1].strip()
+        flash(f'Error en transferencia (se canceló): {msg}', 'danger')
+    finally:
+        conn.autocommit = True
+        cur.close(); conn.close()
+    return redirect(url_for('inventario'))
+
+# ──────────────────────────────────────────────
+# EMPLEADOS (ORM para todos los CRUD)
+# ──────────────────────────────────────────────
+@app.route('/empleados')
+@login_required
+@rol_required('admin', 'supervisor')
+def empleados():
+    # ORM - CRUD operación 8: READ empleados
+    emp = Empleado.query.order_by(Empleado.nombre).all()
+    return render_template('empleados.html', empleados=emp)
+
+@app.route('/empleados/nuevo', methods=['POST'])
+@login_required
+@rol_required('admin', 'supervisor')
+def empleado_nuevo():
+    d = request.form
+    if not d.get('nombre'):
+        flash('El nombre es obligatorio', 'danger')
+        return redirect(url_for('empleados'))
+    # ORM - CRUD operación 9: CREATE empleado
+    try:
+        e = Empleado(nombre=d['nombre'], cargo=d.get('cargo'),
+                     email=d.get('email'), telefono=d.get('telefono'))
+        db.session.add(e)
+        db.session.commit()
+        flash('Empleado creado', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {e}', 'danger')
+    return redirect(url_for('empleados'))
+
+@app.route('/empleados/editar/<int:eid>', methods=['POST'])
+@login_required
+@rol_required('admin', 'supervisor')
+def empleado_editar(eid):
+    d = request.form
+    # ORM - CRUD operación 10: UPDATE empleado
+    try:
+        e = Empleado.query.get_or_404(eid)
+        e.nombre   = d['nombre']
+        e.cargo    = d.get('cargo')
+        e.email    = d.get('email')
+        e.telefono = d.get('telefono')
+        db.session.commit()
+        flash('Empleado actualizado', 'success')
+    except Exception as ex:
+        db.session.rollback()
+        flash(f'Error: {ex}', 'danger')
+    return redirect(url_for('empleados'))
+
+@app.route('/empleados/eliminar/<int:eid>', methods=['POST'])
+@login_required
+@rol_required('admin')
+def empleado_eliminar(eid):
+    # ORM - CRUD operación 11: DELETE empleado
+    try:
+        e = Empleado.query.get_or_404(eid)
+        db.session.delete(e)
+        db.session.commit()
+        flash('Empleado eliminado', 'success')
+    except Exception as ex:
+        db.session.rollback()
+        flash(f'Error (¿tiene ventas?): {ex}', 'danger')
+    return redirect(url_for('empleados'))
+
 # ──────────────────────────────────────────────
 # REPORTES
 # ──────────────────────────────────────────────
 @app.route('/reportes')
 @login_required
+@rol_required('admin', 'supervisor', 'reportes')
 def reportes():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # ── VIEW: reporte de ventas por producto ──
     cur.execute("SELECT * FROM vista_reporte_ventas ORDER BY ingresos_totales DESC LIMIT 20")
     reporte_productos = cur.fetchall()
 
-    # ── GROUP BY + HAVING + agregación: categorías con más de 1 venta ──
     cur.execute("""
         SELECT c.nombre AS categoria,
-               COUNT(DISTINCT v.id_venta)  AS num_ventas,
-               SUM(dv.subtotal)            AS total_ingresos,
-               AVG(dv.subtotal)            AS promedio_por_item
+               COUNT(DISTINCT v.id_venta) AS num_ventas,
+               SUM(dv.subtotal) AS total_ingresos,
+               AVG(dv.subtotal) AS promedio_por_item
         FROM detalle_venta dv
         JOIN productos  p ON p.id_producto  = dv.id_producto
         JOIN categorias c ON c.id_categoria = p.id_categoria
@@ -437,120 +624,53 @@ def reportes():
     """)
     reporte_categorias = cur.fetchall()
 
-    # ── CTE: top 5 clientes por gasto total ──
     cur.execute("""
         WITH gasto_clientes AS (
             SELECT c.id_cliente, c.nombre,
-                   COUNT(v.id_venta)   AS num_compras,
-                   SUM(v.total)        AS total_gastado
+                   COUNT(v.id_venta) AS num_compras,
+                   SUM(v.total)      AS total_gastado
             FROM clientes c
             JOIN ventas v ON v.id_cliente = c.id_cliente
             GROUP BY c.id_cliente, c.nombre
         )
-        SELECT *
-        FROM gasto_clientes
-        ORDER BY total_gastado DESC
-        LIMIT 5
+        SELECT * FROM gasto_clientes ORDER BY total_gastado DESC LIMIT 5
     """)
     top_clientes = cur.fetchall()
+
+    # Llamar al stored procedure sp_reporte_ventas_periodo
+    cur.execute(
+        "SELECT * FROM sp_reporte_ventas_periodo(%s, %s)",
+        ('2026-01-01 00:00:00', '2026-12-31 23:59:59')
+    )
+    resumen_sp = cur.fetchone()
 
     cur.close(); conn.close()
     return render_template('reportes.html',
                            reporte_productos=reporte_productos,
                            reporte_categorias=reporte_categorias,
-                           top_clientes=top_clientes)
+                           top_clientes=top_clientes,
+                           resumen_sp=resumen_sp)
 
 @app.route('/reportes/exportar-csv')
 @login_required
+@rol_required('admin', 'supervisor', 'reportes')
 def exportar_csv():
-    """Exporta el reporte de ventas por producto a CSV."""
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT * FROM vista_reporte_ventas ORDER BY ingresos_totales DESC")
     rows = cur.fetchall()
     cur.close(); conn.close()
-
     output = io.StringIO()
-    writer = csv.DictWriter(output,
-                            fieldnames=['producto', 'categoria', 'unidades_vendidas',
-                                        'ingresos_totales', 'num_ventas'])
+    writer = csv.DictWriter(output, fieldnames=['producto', 'categoria',
+                            'unidades_vendidas', 'ingresos_totales', 'num_ventas'])
     writer.writeheader()
     for row in rows:
         writer.writerow({k: row[k] for k in writer.fieldnames})
-
-    return Response(
-        output.getvalue(),
-        mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=reporte_ventas.csv'}
-    )
-
-# ──────────────────────────────────────────────
-# EMPLEADOS (CRUD)
-# ──────────────────────────────────────────────
-@app.route('/empleados')
-@login_required
-def empleados():
-    conn = get_db()
-    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT * FROM empleados ORDER BY nombre")
-    emp = cur.fetchall()
-    cur.close(); conn.close()
-    return render_template('empleados.html', empleados=emp)
-
-@app.route('/empleados/nuevo', methods=['POST'])
-@login_required
-def empleado_nuevo():
-    d = request.form
-    if not d.get('nombre'):
-        flash('El nombre es obligatorio', 'danger')
-        return redirect(url_for('empleados'))
-    conn = get_db()
-    cur  = conn.cursor()
-    try:
-        cur.execute("INSERT INTO empleados (nombre, cargo, email, telefono) VALUES (%s,%s,%s,%s)",
-                    (d['nombre'], d.get('cargo'), d.get('email'), d.get('telefono')))
-        conn.commit()
-        flash('Empleado creado', 'success')
-    except Exception as e:
-        conn.rollback()
-        flash(f'Error: {e}', 'danger')
-    finally:
-        cur.close(); conn.close()
-    return redirect(url_for('empleados'))
-
-@app.route('/empleados/editar/<int:eid>', methods=['POST'])
-@login_required
-def empleado_editar(eid):
-    d = request.form
-    conn = get_db()
-    cur  = conn.cursor()
-    try:
-        cur.execute("UPDATE empleados SET nombre=%s,cargo=%s,email=%s,telefono=%s WHERE id_empleado=%s",
-                    (d['nombre'],d.get('cargo'),d.get('email'),d.get('telefono'),eid))
-        conn.commit()
-        flash('Empleado actualizado','success')
-    except Exception as e:
-        conn.rollback(); flash(f'Error:{e}','danger')
-    finally:
-        cur.close(); conn.close()
-    return redirect(url_for('empleados'))
-
-@app.route('/empleados/eliminar/<int:eid>', methods=['POST'])
-@login_required
-def empleado_eliminar(eid):
-    conn = get_db()
-    cur  = conn.cursor()
-    try:
-        cur.execute("DELETE FROM empleados WHERE id_empleado=%s",(eid,))
-        conn.commit()
-        flash('Empleado eliminado','success')
-    except Exception as e:
-        conn.rollback(); flash(f'Error (¿tiene ventas?):{e}','danger')
-    finally:
-        cur.close(); conn.close()
-    return redirect(url_for('empleados'))
+    return Response(output.getvalue(), mimetype='text/csv',
+                    headers={'Content-Disposition': 'attachment; filename=reporte_ventas.csv'})
 
 # ──────────────────────────────────────────────
 if __name__ == '__main__':
-    init_admin()
+    with app.app_context():
+        init_usuarios()
     app.run(host='0.0.0.0', port=5000, debug=True)

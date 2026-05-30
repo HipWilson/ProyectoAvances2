@@ -1,31 +1,78 @@
-# TiendaDB — Proyecto 2
+# TiendaDB — Proyecto 3
 **Bases de Datos 1 | Wilson Peña - 24760**
 
-Sistema web para gestión de inventario y ventas. Stack: **Python/Flask · PostgreSQL · HTML/CSS/JS · Docker**.
+Sistema web de gestión de inventario y ventas, extendido con seguridad a nivel de base de datos: roles y permisos en el DBMS, stored procedures y ORM (SQLAlchemy).
+
+Stack: **Python/Flask · SQLAlchemy (ORM) · PostgreSQL · HTML/CSS/JS · Docker**
 
 ---
 
-## Levantar el proyecto
+## Levantar el proyecto desde cero
 
 ```bash
-# 1. Clonar el repositorio
-git clone <https://github.com/HipWilson/ProyectoAvances2.git>
+# 1. Clonar el repositorio y entrar a la carpeta
+git clone <URL_DEL_REPO>
 cd tienda
 
-# 2. Copiar variables de entorno (ya vienen configuradas)
+# 2. Cambiar a la rama del proyecto
+git checkout proyecto-3
+
+# 3. Copiar variables de entorno (ya vienen configuradas)
 cp .env.example .env
 
-# 3. Levantar con Docker
+# 4. Levantar todo con Docker
 docker compose up --build
 ```
 
 Abrir en el navegador: **http://localhost:5000**
 
-| Usuario | Contraseña | Rol |
-|---------|-----------|-----|
-| admin   | admin123  | admin |
+> Si ya tienes el volumen de una corrida anterior y quieres empezar limpio:
+> ```bash
+> docker compose down -v
+> docker compose up --build
+> ```
 
-> El usuario `admin` se crea automáticamente al primer arranque.
+---
+
+## Credenciales de base de datos
+
+| Variable     | Valor      |
+|--------------|------------|
+| `DB_USER`    | `proy3`    |
+| `DB_PASSWORD`| `secret`   |
+| `DB_NAME`    | `tiendadb` |
+| `DB_HOST`    | `db`       |
+| `DB_PORT`    | `5432`     |
+
+---
+
+## Usuarios de prueba (1 por cada rol)
+
+Todos creados automáticamente al primer arranque por `init_usuarios()`.
+
+| Usuario               | Contraseña  | Rol         |
+|-----------------------|-------------|-------------|
+| `admin_usuario`       | `secret123` | admin       |
+| `supervisor_usuario`  | `secret123` | supervisor  |
+| `vendedor_usuario`    | `secret123` | vendedor    |
+| `bodeguero_usuario`   | `secret123` | bodeguero   |
+| `reportes_usuario`    | `secret123` | reportes    |
+
+> También existe el usuario `admin` con contraseña `admin123` (rol admin).
+
+---
+
+## Qué puede hacer cada rol en la UI
+
+| Sección      | admin | supervisor | vendedor | bodeguero | reportes |
+|--------------|:-----:|:----------:|:--------:|:---------:|:--------:|
+| Dashboard    | ✓     | ✓          | ✓        | ✓         | ✓        |
+| Productos    | ✓     | ✓ (sin eliminar) | solo ver | solo ver | solo ver |
+| Inventario   | ✓     | ✓          | —        | ✓         | —        |
+| Clientes     | ✓     | ✓          | ✓ (sin eliminar) | — | solo ver |
+| Empleados    | ✓     | ✓          | —        | —         | —        |
+| Ventas       | ✓     | ✓ (sin crear) | ✓     | solo ver  | solo ver |
+| Reportes     | ✓     | ✓          | —        | —         | ✓        |
 
 ---
 
@@ -35,367 +82,131 @@ Abrir en el navegador: **http://localhost:5000**
 tienda/
 ├── docker-compose.yml
 ├── Dockerfile
+├── entrypoint.sh
 ├── .env
 ├── .env.example
 ├── db/
-│   ├── 01_schema.sql      ← DDL: tablas, índices, VIEW
-│   └── 02_seed.sql        ← Datos de prueba 
+│   ├── 01_schema.sql              ← DDL: tablas, índices, VIEW
+│   ├── 02_seed.sql                ← Datos de prueba (25+ registros por tabla)
+│   ├── 03_roles.sql               ← 5 roles con CREATE ROLE, GRANT, REVOKE
+│   ├── 04_stored_procedures.sql   ← 6 stored procedures PL/pgSQL
+│   └── 05_seed_usuarios.sql       ← 1 usuario por rol
 ├── backend/
-│   ├── app.py             ← rutas, lógica, SQL explícito
+│   ├── app.py                     ← Flask + ORM + SPs + decoradores de rol
+│   ├── models.py                  ← Modelos SQLAlchemy
 │   └── requirements.txt
 └── frontend/
-    ├── templates/         ← base, login, dashboard, etc.
-    └── static/            ← CSS y JS
+    ├── templates/
+    │   ├── base.html              ← Navegación condicional por rol
+    │   ├── login.html             ← Tabla de usuarios de prueba
+    │   ├── dashboard.html
+    │   ├── productos.html
+    │   ├── inventario.html        ← Vista exclusiva para bodeguero/admin
+    │   ├── clientes.html
+    │   ├── empleados.html
+    │   ├── ventas.html
+    │   └── reportes.html
+    └── static/
+        ├── css/style.css
+        └── js/main.js
 ```
 
 ---
 
-## I. Diseño de Base de Datos
+## I. Seguridad y Roles
 
-### Diagrama ER 
-![alt text](image.png)
+### 5 Roles definidos en el DBMS (`db/03_roles.sql`)
 
-### Diagrama DDL
-![alt text](<DDL .png>)
-#### Entidades y atributos principales
+Creados con `CREATE ROLE`, permisos asignados con `GRANT` y removidos con `REVOKE`, granulares por tabla y operación.
 
-| Entidad | Atributos clave |
-|---------|----------------|
-| categorias | **id_categoria** (PK), nombre, descripcion |
-| proveedores | **id_proveedor** (PK), nombre, telefono, email, direccion |
-| productos | **id_producto** (PK), nombre, descripcion, precio, stock, id_categoria (FK), id_proveedor (FK) |
-| empleados | **id_empleado** (PK), nombre, cargo, email, telefono |
-| clientes | **id_cliente** (PK), nombre, email, telefono, direccion |
-| ventas | **id_venta** (PK), fecha, total, id_cliente (FK), id_empleado (FK) |
-| detalle_venta | **id_detalle** (PK), id_venta (FK), id_producto (FK), cantidad, precio_unitario, subtotal |
-| usuarios | **id_usuario** (PK), username (UNIQUE), password_hash, rol |
+| Rol              | Tablas con acceso                                                     | Operaciones                                  |
+|------------------|-----------------------------------------------------------------------|----------------------------------------------|
+| `rol_admin`      | Todas                                                                 | ALL (SELECT, INSERT, UPDATE, DELETE, EXECUTE)|
+| `rol_supervisor` | Todas (lectura) + productos + empleados (escritura)                   | SELECT todas; INSERT/UPDATE productos/empleados |
+| `rol_vendedor`   | productos, categorias, clientes, empleados, ventas, detalle_venta     | SELECT; INSERT ventas/detalle; UPDATE stock  |
+| `rol_bodeguero`  | productos, categorias, proveedores, ventas, detalle_venta             | SELECT; UPDATE stock y descripcion           |
+| `rol_reportes`   | categorias, proveedores, productos, empleados, clientes, ventas, detalle_venta, vista_reporte_ventas | Solo SELECT |
 
-#### Cardinalidades
+### Autenticación y protección de rutas
 
-- Una **categoría** tiene muchos **productos** (1:N)
-- Un **proveedor** suministra muchos **productos** (1:N)
-- Un **cliente** realiza muchas **ventas** (1:N)
-- Un **empleado** atiende muchas **ventas** (1:N)
-- Una **venta** contiene muchos **detalles** (1:N)
-- Un **producto** aparece en muchos **detalles** (1:N)
+- Login/logout con `flask.session` y contraseñas hasheadas con `werkzeug`.
+- Decorador `@rol_required(...)` en cada ruta del backend.
+- Navegación lateral (`base.html`) usa `puede_acceder(endpoint)` para mostrar u ocultar ítems según el rol activo.
+- Acceso denegado redirige al dashboard con mensaje de error.
 
 ---
 
-### Modelo Relacional (notación relacional)
-
-```
-categorias   ( id_categoria, nombre, descripcion )
-proveedores  ( id_proveedor, nombre, telefono, email, direccion )
-productos    ( id_producto, nombre, descripcion, precio, stock,
-               id_categoria → categorias, id_proveedor → proveedores )
-empleados    ( id_empleado, nombre, cargo, email, telefono )
-clientes     ( id_cliente, nombre, email, telefono, direccion )
-ventas       ( id_venta, fecha, total,
-               id_cliente → clientes, id_empleado → empleados )
-detalle_venta( id_detalle, id_venta → ventas, id_producto → productos,
-               cantidad, precio_unitario, subtotal )
-usuarios     ( id_usuario, username, password_hash, rol )
-```
-
----
-
-### Normalización hasta 3FN
-
-#### Tabla `productos`
-
-**1FN:** Todos los atributos son atómicos, no hay grupos repetitivos.
-`(id_producto, nombre, descripcion, precio, stock, id_categoria, id_proveedor)`
-
-**2FN:** La PK es simple, por lo que toda dependencia parcial es imposible. Se cumple automáticamente.
-
-**3FN:** Verificar que no existan dependencias transitivas:
-- `nombre, precio, stock` dependen solo de `id_producto` ✓
-- `id_categoria` es FK, no guarda el nombre de la categoría en esta tabla ✓
-- `id_proveedor` es FK, no guarda datos del proveedor aquí ✓
-
-**→ La tabla está en 3FN.**
-
----
-
-#### Tabla `detalle_venta`
-
-**1FN:** Atributos atómicos, sin multivaluados ✓
-
-**2FN:** PK es `id_detalle`. Sin dependencias parciales ✓
-
-**3FN:** `precio_unitario` se copia al momento de la venta. No depende de `id_producto` directamente en esta tabla, es un dato capturado en el momento de la transacción, no derivado. `subtotal = cantidad × precio_unitario` es un atributo calculado que se almacena por eficiencia en reportes.
-
-**→ La tabla está en 3FN.**
-
----
-
-#### Tabla `ventas`
-
-**Atributos:** (id_venta, fecha, total, id_cliente, id_empleado)
-
-**1FN:** Todos los atributos son atómicos. No hay grupos repetitivos. ✓
-
-**2FN:** PK simple (`id_venta`), por lo que no existen dependencias parciales posibles. ✓
-
-**3FN:** `fecha` y `total` dependen únicamente de `id_venta`. `id_cliente` e `id_empleado` son FK — no almacenan datos del cliente ni del empleado en esta tabla. Sin dependencias transitivas.
-
-**→ `ventas` está en 3FN.** ✓
-
----
-
-#### Tabla `clientes`
-
-**Atributos:** (id_cliente, nombre, email, telefono, direccion)
-
-**1FN:** Atributos atómicos. `direccion` es texto libre — no se descompone porque el negocio no requiere consultas por componente. ✓
-
-**2FN:** PK simple → no hay dependencias parciales. ✓
-
-**3FN:** `nombre`, `email`, `telefono`, `direccion` dependen directamente de `id_cliente`. Ningún atributo depende de otro atributo no clave.
-
-**→ `clientes` está en 3FN.** ✓
-
----
-
-#### Tabla `proveedores`
-
-**Atributos:** (id_proveedor, nombre, telefono, email, direccion)
-
-**1FN:** Atributos atómicos, sin multivaluados. ✓
-
-**2FN:** PK simple → no hay dependencias parciales. ✓
-
-**3FN:** `nombre`, `telefono`, `email`, `direccion` dependen únicamente de `id_proveedor`. Sin dependencias transitivas.
-
-**→ `proveedores` está en 3FN.** ✓
-
----
-
-#### Tabla `empleados`
-
-**Atributos:** (id_empleado, nombre, cargo, email, telefono)
-
-**1FN:** Atributos atómicos. ✓
-
-**2FN:** PK simple → sin dependencias parciales. ✓
-
-**3FN:** `cargo` depende de `id_empleado`, no de ningún otro atributo no clave. No existe tabla separada de cargos porque el dominio no requiere gestionar cargos como entidad independiente.
-
-**→ `empleados` está en 3FN.** ✓
-
----
-
-#### Tabla `categorias`
-
-**Atributos:** (id_categoria, nombre, descripcion)
-
-**1FN → 3FN:** PK simple, atributos atómicos, `nombre` y `descripcion` dependen únicamente de `id_categoria`. Sin dependencias transitivas.
-
-**→ `categorias` está en 3FN.** ✓
-
----
-
-#### Tabla `usuarios`
-
-**Atributos:** (id_usuario, username, password_hash, rol)
-
-**1FN → 3FN:** `username` es UNIQUE (clave candidata alternativa). `password_hash` y `rol` dependen de `id_usuario`. Sin dependencias transitivas.
-
-**→ `usuarios` está en 3FN.** ✓
-
----
-
-### Resumen de dependencias funcionales
-
-| Tabla | Dependencias funcionales |
-|-------|--------------------------|
-| categorias | id_categoria → nombre, descripcion |
-| proveedores | id_proveedor → nombre, telefono, email, direccion |
-| productos | id_producto → nombre, descripcion, precio, stock, id_categoria, id_proveedor |
-| empleados | id_empleado → nombre, cargo, email, telefono |
-| clientes | id_cliente → nombre, email, telefono, direccion |
-| ventas | id_venta → fecha, total, id_cliente, id_empleado |
-| detalle_venta | id_detalle → id_venta, id_producto, cantidad, precio_unitario, subtotal |
-| usuarios | id_usuario → username, password_hash, rol |
-
----
-
-## II. SQL — Consultas implementadas en la UI
-
-Todas las consultas se ejecutan desde la aplicación web.
-
-### JOINs (3 consultas)
-
-**JOIN 1: Dashboard:** Últimas ventas con nombre de cliente y empleado
-```sql
-SELECT v.id_venta, v.fecha, v.total,
-       c.nombre AS cliente, e.nombre AS empleado
-FROM ventas v
-JOIN clientes  c ON c.id_cliente  = v.id_cliente
-JOIN empleados e ON e.id_empleado = v.id_empleado
-ORDER BY v.fecha DESC LIMIT 5
-```
-
-**JOIN 2: Productos:** Productos con categoría y proveedor
-```sql
-SELECT p.*, c.nombre AS categoria, pr.nombre AS proveedor
-FROM productos p
-JOIN categorias  c  ON c.id_categoria = p.id_categoria
-JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor
-```
-
-**JOIN 3: Ventas:** Ventas con cliente, empleado y cantidad de ítems
-```sql
-SELECT v.id_venta, v.fecha, v.total,
-       c.nombre AS cliente, e.nombre AS empleado,
-       COUNT(dv.id_detalle) AS items
-FROM ventas v
-JOIN clientes  c  ON c.id_cliente  = v.id_cliente
-JOIN empleados e  ON e.id_empleado = v.id_empleado
-LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
-GROUP BY v.id_venta, v.fecha, v.total, c.nombre, e.nombre
-```
-
-### Subqueries (2 consultas)
-
-**Subquery correlacionado: Clientes:** Número de compras y total gastado por cliente
-```sql
-SELECT c.*,
-  (SELECT COUNT(*) FROM ventas v WHERE v.id_cliente = c.id_cliente) AS num_compras,
-  (SELECT COALESCE(SUM(v.total),0) FROM ventas v WHERE v.id_cliente = c.id_cliente) AS total_gastado
-FROM clientes c
-```
-
-**Subquery IN: Ventas:** Productos con stock disponible vendidos en los últimos 6 meses
-```sql
-SELECT p.*, c.nombre AS categoria
-FROM productos p
-JOIN categorias c ON c.id_categoria = p.id_categoria
-WHERE p.stock > 0
-  AND p.id_producto IN (
-      SELECT DISTINCT dv.id_producto
-      FROM detalle_venta dv
-      JOIN ventas v ON v.id_venta = dv.id_venta
-      WHERE v.fecha >= NOW() - INTERVAL '6 months'
-  )
-ORDER BY p.nombre
-```
-
-### GROUP BY + HAVING + Agregación: Reportes
-
-```sql
-SELECT c.nombre AS categoria,
-       COUNT(DISTINCT v.id_venta) AS num_ventas,
-       SUM(dv.subtotal)           AS total_ingresos,
-       AVG(dv.subtotal)           AS promedio_por_item
-FROM detalle_venta dv
-JOIN productos  p ON p.id_producto  = dv.id_producto
-JOIN categorias c ON c.id_categoria = p.id_categoria
-JOIN ventas     v ON v.id_venta     = dv.id_venta
-GROUP BY c.nombre
-HAVING COUNT(DISTINCT v.id_venta) > 1
-ORDER BY total_ingresos DESC
-```
-
-### CTE (WITH): Reportes
-
-```sql
-WITH gasto_clientes AS (
-    SELECT c.id_cliente, c.nombre,
-           COUNT(v.id_venta) AS num_compras,
-           SUM(v.total)      AS total_gastado
-    FROM clientes c
-    JOIN ventas v ON v.id_cliente = c.id_cliente
-    GROUP BY c.id_cliente, c.nombre
-)
-SELECT * FROM gasto_clientes
-ORDER BY total_gastado DESC LIMIT 5
-```
-
-### VIEW
-
-```sql
-CREATE VIEW vista_reporte_ventas AS
-SELECT p.nombre AS producto, c.nombre AS categoria,
-       SUM(dv.cantidad)            AS unidades_vendidas,
-       SUM(dv.subtotal)            AS ingresos_totales,
-       COUNT(DISTINCT dv.id_venta) AS num_ventas
-FROM detalle_venta dv
-JOIN productos  p ON p.id_producto  = dv.id_producto
-JOIN categorias c ON c.id_categoria = p.id_categoria
-GROUP BY p.id_producto, p.nombre, c.nombre
-```
+## II. Stored Procedures
+
+### 6 SPs definidos en `db/04_stored_procedures.sql`, invocados desde `backend/app.py`
+
+| Stored Procedure              | Ruta que lo invoca              | Descripción                                                    |
+|-------------------------------|---------------------------------|----------------------------------------------------------------|
+| `sp_registrar_venta`          | `POST /ventas/nueva`            | Registra venta completa. Params IN/OUT. ROLLBACK si falla stock |
+| `sp_ajustar_stock`            | `POST /inventario/ajustar`      | Ajusta stock +/-. Params IN/OUT. Excepción si queda negativo   |
+| `sp_crear_producto`           | `POST /productos/nuevo`         | Crea producto con validaciones de negocio. Params IN/OUT       |
+| `sp_eliminar_cliente`         | `POST /clientes/eliminar`       | Elimina cliente solo si no tiene ventas. Params IN/OUT         |
+| `sp_reporte_ventas_periodo`   | `GET /reportes`                 | Resumen de ventas entre fechas. Params IN/OUT                  |
+| `sp_transferir_stock`         | `POST /inventario/transferir`   | Transfiere stock entre productos. **SAVEPOINT / ROLLBACK**     |
 
 ### Transacción explícita con ROLLBACK
 
-En `POST /ventas/nueva` (archivo `backend/app.py`):
+`sp_transferir_stock` usa `SAVEPOINT sp_transferencia` y `ROLLBACK TO SAVEPOINT` dentro del stored procedure si el stock es insuficiente. El backend lo envuelve adicionalmente con `BEGIN` / `COMMIT` / `ROLLBACK` explícitos.
 
-```python
-conn.autocommit = False
-cur.execute("BEGIN")             # BEGIN explícito
-try:
-    # Verificar stock con FOR UPDATE (bloqueo)
-    # INSERT ventas
-    # INSERT detalle_venta (por cada ítem)
-    # UPDATE productos SET stock = stock - cantidad
-    conn.commit()                # COMMIT
-except Exception as e:
-    conn.rollback()              # ROLLBACK si falla cualquier paso
-```
+Todos los SPs tienen:
+- Parámetros `OUT` (al menos `p_mensaje TEXT`)
+- Bloque `EXCEPTION WHEN OTHERS` con `RAISE` para propagar el error al backend
 
 ---
 
-## III. Aplicación web
+## III. ORM (SQLAlchemy)
 
-### CRUD implementado
+Modelos definidos en `backend/models.py`. Más de 3 operaciones CRUD realizadas vía ORM en `backend/app.py`:
 
-| Entidad | Crear | Leer | Actualizar | Eliminar |
-|---------|-------|------|-----------|---------|
-| Productos | ✓ | ✓ | ✓ | ✓ |
-| Clientes  | ✓ | ✓ | ✓ | ✓ |
-| Empleados | ✓ | ✓ | ✓ | ✓ |
-| Ventas    | ✓ | ✓ | — | — |
-
-### Reportes visibles en UI
-
-- `/reportes`: Ventas por producto (VIEW), ingresos por categoría (GROUP BY/HAVING), top 5 clientes (CTE)
-- `/reportes/exportar-csv`: Descarga el reporte de ventas como CSV
-
-### Manejo de errores
-
-- Validación de campos obligatorios antes de ejecutar SQL
-- Mensajes flash de éxito/error visibles en la interfaz
-- ROLLBACK automático con mensaje descriptivo al usuario si falla una transacción
+| Operación | Modelo    | Ruta                              |
+|-----------|-----------|-----------------------------------|
+| READ      | `Usuario` | `GET /login` (autenticación)      |
+| READ      | `Categoria`, `Proveedor` | `GET /productos`     |
+| UPDATE    | `Producto`| `POST /productos/editar/<id>`     |
+| DELETE    | `Producto`| `POST /productos/eliminar/<id>`   |
+| CREATE    | `Cliente` | `POST /clientes/nuevo`            |
+| UPDATE    | `Cliente` | `POST /clientes/editar/<id>`      |
+| READ      | `Producto`| `GET /inventario`                 |
+| READ      | `Empleado`| `GET /empleados`                  |
+| CREATE    | `Empleado`| `POST /empleados/nuevo`           |
+| UPDATE    | `Empleado`| `POST /empleados/editar/<id>`     |
+| DELETE    | `Empleado`| `POST /empleados/eliminar/<id>`   |
 
 ---
 
-## IV. Avanzado
+## IV. Consultas SQL avanzadas (del Proyecto 2, mantenidas)
 
-- **Autenticación:** Login/logout con `flask.session` y contraseñas hasheadas con `werkzeug`
-- **Exportar CSV:** Botón en `/reportes` descarga `reporte_ventas.csv`
+| Técnica              | Dónde se usa                          |
+|----------------------|---------------------------------------|
+| JOIN 3 tablas        | Dashboard (últimas ventas)            |
+| JOIN 3 tablas        | Página de productos                   |
+| JOIN + GROUP BY      | Página de ventas                      |
+| Subquery correlacionado | Página de clientes (total gastado) |
+| Subquery EXISTS      | Ventas (productos con stock > 0)      |
+| GROUP BY + HAVING    | Reportes (ingresos por categoría)     |
+| CTE (WITH)           | Reportes (top 5 clientes)             |
+| VIEW                 | `vista_reporte_ventas` en reportes    |
+| Transacción explícita| `POST /ventas/nueva` y todos los SPs  |
 
 ---
 
-## Índices justificados
+## V. Índices
 
 ```sql
--- Búsquedas por nombre de producto (filtros en UI)
 CREATE INDEX idx_productos_nombre    ON productos(nombre);
-
--- Reportes de ventas por rango de fecha
 CREATE INDEX idx_ventas_fecha        ON ventas(fecha);
-
--- Filtros de productos por categoría
 CREATE INDEX idx_productos_categoria ON productos(id_categoria);
 ```
 
 ---
 
-## Credenciales de base de datos
+## Notas de entrega
 
-| Variable | Valor |
-|----------|-------|
-| DB_USER | `proy2` |
-| DB_PASSWORD | `secret` |
-| DB_NAME | `tiendadb` |
-| DB_HOST | `db` (servicio Docker) |
+- Rama: `proyecto-3` del repositorio del Proyecto 2
+- Credenciales fijas: usuario `proy3`, contraseña `secret`
+- Levanta con: `docker compose up --build`

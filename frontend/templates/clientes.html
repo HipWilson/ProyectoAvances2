@@ -3,7 +3,9 @@
 {% block content %}
 <div class="page-header">
   <h2 class="page-title">Clientes <span class="badge">Subquery correlacionado</span></h2>
+  {% if puede_acceder('cliente_nuevo') %}
   <button class="btn btn-primary" onclick="openModal('modal-nuevo-cliente')">+ Nuevo cliente</button>
+  {% endif %}
 </div>
 
 <div class="section-card">
@@ -12,7 +14,8 @@
       <thead>
         <tr>
           <th>ID</th><th>Nombre</th><th>Email</th><th>Teléfono</th>
-          <th>Compras</th><th>Total gastado</th><th>Acciones</th>
+          <th>Compras</th><th>Total gastado</th>
+          {% if puede_acceder('cliente_editar') %}<th>Acciones</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -24,13 +27,23 @@
           <td>{{ c.telefono or '—' }}</td>
           <td>{{ c.num_compras }}</td>
           <td class="money">Q{{ "%.2f"|format(c.total_gastado) }}</td>
+          {% if puede_acceder('cliente_editar') %}
           <td class="actions">
-            <button class="btn btn-sm" onclick='openEditCliente({{ c | tojson }})'>Editar</button>
+            <button class="btn btn-sm" onclick="abrirEditCliente(
+              {{ c.id_cliente }},
+              {{ c.nombre | tojson }},
+              {{ (c.email or '') | tojson }},
+              {{ (c.telefono or '') | tojson }},
+              {{ (c.direccion or '') | tojson }}
+            )">Editar</button>
+            {% if puede_acceder('cliente_eliminar') %}
             <form method="POST" action="{{ url_for('cliente_eliminar', cid=c.id_cliente) }}"
-                  style="display:inline" onsubmit="return confirm('¿Eliminar cliente?')">
+                  style="display:inline" onsubmit="return confirm('Eliminar cliente?')">
               <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
             </form>
+            {% endif %}
           </td>
+          {% endif %}
         </tr>
         {% else %}
         <tr><td colspan="7" class="empty">No hay clientes</td></tr>
@@ -40,30 +53,18 @@
   </div>
 </div>
 
-<!-- Modal nuevo -->
+{% if puede_acceder('cliente_nuevo') %}
 <div id="modal-nuevo-cliente" class="modal-overlay hidden">
   <div class="modal">
     <h3 class="modal-title">Nuevo Cliente</h3>
     <form method="POST" action="{{ url_for('cliente_nuevo') }}">
       <div class="form-row">
-        <div class="form-group">
-          <label>Nombre *</label>
-          <input type="text" name="nombre" required>
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email">
-        </div>
+        <div class="form-group"><label>Nombre *</label><input type="text" name="nombre" required></div>
+        <div class="form-group"><label>Email</label><input type="email" name="email"></div>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input type="text" name="telefono">
-        </div>
-        <div class="form-group">
-          <label>Dirección</label>
-          <input type="text" name="direccion">
-        </div>
+        <div class="form-group"><label>Teléfono</label><input type="text" name="telefono"></div>
+        <div class="form-group"><label>Dirección</label><input type="text" name="direccion"></div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick="closeModal('modal-nuevo-cliente')">Cancelar</button>
@@ -72,31 +73,20 @@
     </form>
   </div>
 </div>
+{% endif %}
 
-<!-- Modal editar -->
+{% if puede_acceder('cliente_editar') %}
 <div id="modal-editar-cliente" class="modal-overlay hidden">
   <div class="modal">
     <h3 class="modal-title">Editar Cliente</h3>
     <form id="form-editar-cliente" method="POST">
       <div class="form-row">
-        <div class="form-group">
-          <label>Nombre *</label>
-          <input type="text" name="nombre" id="ec-nombre" required>
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email" id="ec-email">
-        </div>
+        <div class="form-group"><label>Nombre *</label><input type="text" name="nombre" id="ec-nombre" required></div>
+        <div class="form-group"><label>Email</label><input type="email" name="email" id="ec-email"></div>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input type="text" name="telefono" id="ec-telefono">
-        </div>
-        <div class="form-group">
-          <label>Dirección</label>
-          <input type="text" name="direccion" id="ec-direccion">
-        </div>
+        <div class="form-group"><label>Teléfono</label><input type="text" name="telefono" id="ec-telefono"></div>
+        <div class="form-group"><label>Dirección</label><input type="text" name="direccion" id="ec-direccion"></div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick="closeModal('modal-editar-cliente')">Cancelar</button>
@@ -107,13 +97,14 @@
 </div>
 
 <script>
-function openEditCliente(c) {
-  document.getElementById('ec-nombre').value    = c.nombre;
-  document.getElementById('ec-email').value     = c.email    || '';
-  document.getElementById('ec-telefono').value  = c.telefono || '';
-  document.getElementById('ec-direccion').value = c.direccion|| '';
-  document.getElementById('form-editar-cliente').action = '/clientes/editar/' + c.id_cliente;
+function abrirEditCliente(id, nombre, email, telefono, direccion) {
+  document.getElementById('ec-nombre').value    = nombre;
+  document.getElementById('ec-email').value     = email;
+  document.getElementById('ec-telefono').value  = telefono;
+  document.getElementById('ec-direccion').value = direccion;
+  document.getElementById('form-editar-cliente').action = '/clientes/editar/' + id;
   openModal('modal-editar-cliente');
 }
 </script>
+{% endif %}
 {% endblock %}

@@ -6,6 +6,24 @@
   <a href="{{ url_for('exportar_csv') }}" class="btn btn-primary">↓ Exportar CSV</a>
 </div>
 
+<!-- Resumen del SP sp_reporte_ventas_periodo -->
+{% if resumen_sp %}
+<div class="section-card" style="border-color:var(--accent2)">
+  <h3 class="section-title">Resumen del año <span class="badge">SP: sp_reporte_ventas_periodo</span></h3>
+  <div class="kpi-grid" style="margin-bottom:0">
+    <div class="kpi-card">
+      <span class="kpi-label">Total ventas (año)</span>
+      <span class="kpi-value">{{ resumen_sp.p_total_ventas }}</span>
+    </div>
+    <div class="kpi-card accent">
+      <span class="kpi-label">Ingresos totales</span>
+      <span class="kpi-value">Q{{ "%.2f"|format(resumen_sp.p_total_ingresos) }}</span>
+    </div>
+  </div>
+  <p style="margin-top:.8rem;font-size:.82rem;color:var(--text-muted)">{{ resumen_sp.p_mensaje }}</p>
+</div>
+{% endif %}
+
 <!-- Reporte 1: VIEW -->
 <div class="section-card">
   <h3 class="section-title">Ventas por Producto <span class="badge">VIEW: vista_reporte_ventas</span></h3>
@@ -40,9 +58,7 @@
   <div class="table-wrap">
     <table class="data-table">
       <thead>
-        <tr>
-          <th>Categoría</th><th>Nº Ventas</th><th>Total ingresos</th><th>Promedio/item</th>
-        </tr>
+        <tr><th>Categoría</th><th>Nº Ventas</th><th>Total ingresos</th><th>Promedio/item</th></tr>
       </thead>
       <tbody>
         {% for r in reporte_categorias %}

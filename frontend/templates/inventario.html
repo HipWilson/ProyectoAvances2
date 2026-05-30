@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}Inventario — TiendaDB{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Inventario <span class="badge">Gestión de Stock</span></h2>
+  <div style="display:flex;gap:.6rem;">
+    <button class="btn btn-primary" onclick="openModal('modal-ajustar')">± Ajustar Stock</button>
+    <button class="btn" onclick="openModal('modal-transferir')">⇄ Transferir Stock</button>
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Producto</th><th>Categoría</th><th>Proveedor</th>
+          <th>Precio</th><th>Stock</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in productos %}
+        <tr class="{{ 'row-warn' if p.stock < 10 }}">
+          <td>{{ p.id_producto }}</td>
+          <td>{{ p.nombre }}</td>
+          <td><span class="tag">{{ p.categoria_obj.nombre }}</span></td>
+          <td>{{ p.proveedor_obj.nombre }}</td>
+          <td class="money">Q{{ "%.2f"|format(p.precio) }}</td>
+          <td>
+            <span class="stock-badge {{ 'low' if p.stock < 10 else 'ok' }}">{{ p.stock }}</span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">No hay productos</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal ajustar stock (SP: sp_ajustar_stock) -->
+<div id="modal-ajustar" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Ajustar Stock</h3>
+    <p class="modal-sub">Usa el SP <strong>sp_ajustar_stock</strong>. Cantidad positiva = entrada, negativa = salida.</p>
+    <form method="POST" action="{{ url_for('ajustar_stock') }}">
+      <div class="form-group" style="margin-bottom:.8rem">
+        <label>Producto *</label>
+        <select name="id_producto" required>
+          <option value="">— Seleccionar —</option>
+          {% for p in productos %}
+          <option value="{{ p.id_producto }}">{{ p.nombre }} (stock: {{ p.stock }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Cantidad * (+ entrada / - salida)</label>
+          <input type="number" name="cantidad" required placeholder="Ej: 10 o -5">
+        </div>
+        <div class="form-group">
+          <label>Motivo</label>
+          <input type="text" name="motivo" placeholder="Ej: Recepción de pedido">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-ajustar')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Aplicar ajuste</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal transferir stock (SP: sp_transferir_stock con ROLLBACK) -->
+<div id="modal-transferir" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 class="modal-title">Transferir Stock</h3>
+    <p class="modal-sub">Usa el SP <strong>sp_transferir_stock</strong> con <strong>SAVEPOINT/ROLLBACK</strong> si falla.</p>
+    <form method="POST" action="{{ url_for('transferir_stock') }}">
+      <div class="form-group" style="margin-bottom:.8rem">
+        <label>Producto Origen *</label>
+        <select name="id_origen" required>
+          <option value="">— Seleccionar —</option>
+          {% for p in productos %}
+          <option value="{{ p.id_producto }}">{{ p.nombre }} (stock: {{ p.stock }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:.8rem">
+        <label>Producto Destino *</label>
+        <select name="id_destino" required>
+          <option value="">— Seleccionar —</option>
+          {% for p in productos %}
+          <option value="{{ p.id_producto }}">{{ p.nombre }} (stock: {{ p.stock }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:.8rem">
+        <label>Cantidad a transferir *</label>
+        <input type="number" name="cantidad" min="1" required placeholder="Ej: 5">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal('modal-transferir')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Transferir</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

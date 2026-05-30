@@ -2,17 +2,17 @@
 {% block title %}Ventas — TiendaDB{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h2 class="page-title">Ventas <span class="badge">JOIN 3 tablas · EXISTS subquery · Transacción</span></h2>
+  <h2 class="page-title">Ventas <span class="badge">SP: sp_registrar_venta · Transacción explícita</span></h2>
+  {% if puede_acceder('venta_nueva') %}
   <button class="btn btn-primary" onclick="openModal('modal-nueva-venta')">+ Nueva venta</button>
+  {% endif %}
 </div>
 
 <div class="section-card">
   <div class="table-wrap">
     <table class="data-table">
       <thead>
-        <tr>
-          <th>#</th><th>Fecha</th><th>Cliente</th><th>Empleado</th><th>Items</th><th>Total</th>
-        </tr>
+        <tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Empleado</th><th>Items</th><th>Total</th></tr>
       </thead>
       <tbody>
         {% for v in ventas %}
@@ -32,11 +32,12 @@
   </div>
 </div>
 
+{% if puede_acceder('venta_nueva') %}
 <!-- Modal nueva venta -->
 <div id="modal-nueva-venta" class="modal-overlay hidden">
   <div class="modal modal-lg">
     <h3 class="modal-title">Registrar Venta</h3>
-    <p class="modal-sub">Esta operación usa una <strong>transacción explícita</strong> con ROLLBACK automático si falla el stock.</p>
+    <p class="modal-sub">Invoca <strong>sp_registrar_venta</strong> con <strong>BEGIN/COMMIT/ROLLBACK</strong> explícito.</p>
     <form method="POST" action="{{ url_for('venta_nueva') }}">
       <div class="form-row">
         <div class="form-group">
@@ -59,13 +60,15 @@
         </div>
       </div>
 
-      <h4 style="margin:1rem 0 .5rem">Productos (solo los con stock disponible — EXISTS)</h4>
+      <h4 style="margin:1rem 0 .5rem">Productos (solo con stock disponible)</h4>
       <div id="items-container">
         <div class="item-row">
           <select name="producto_id[]" class="item-select" onchange="updateSubtotal(this)">
             <option value="">— Producto —</option>
             {% for p in productos %}
-            <option value="{{ p.id_producto }}" data-precio="{{ p.precio }}" data-stock="{{ p.stock }}">
+            <option value="{{ p.id_producto }}"
+                    data-precio="{{ p.precio }}"
+                    data-stock="{{ p.stock }}">
               {{ p.nombre }} (Q{{ "%.2f"|format(p.precio) }} | stock: {{ p.stock }})
             </option>
             {% endfor %}
@@ -90,10 +93,9 @@
     </form>
   </div>
 </div>
+{% endif %}
 
 <script>
-const productosData = {{ productos | tojson }};
-
 function addItem() {
   const container = document.getElementById('items-container');
   const first = container.querySelector('.item-row');

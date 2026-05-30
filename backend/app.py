@@ -8,12 +8,8 @@ from flask import (Flask, render_template, request, redirect, url_for,
 import psycopg2
 import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import text
 from models import db, Categoria, Proveedor, Producto, Empleado, Cliente, Usuario, Venta, DetalleVenta
 
-# ──────────────────────────────────────────────
-# App & ORM setup
-# ──────────────────────────────────────────────
 app = Flask(__name__, template_folder='../frontend/templates',
             static_folder='../frontend/static')
 
@@ -29,22 +25,14 @@ app.config['SQLALCHEMY_DATABASE_URI'] = (
     f'postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db.init_app(app)
 
-# ──────────────────────────────────────────────
-# Conexión raw psycopg2 (para stored procedures)
-# ──────────────────────────────────────────────
 def get_db():
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT,
         dbname=DB_NAME, user=DB_USER, password=DB_PASS
     )
 
-# ──────────────────────────────────────────────
-# Permisos por rol
-# ──────────────────────────────────────────────
-# Define qué rutas (endpoints) puede acceder cada rol
 ROL_PERMISOS = {
     'admin': {
         'dashboard', 'productos', 'producto_nuevo', 'producto_editar', 'producto_eliminar',
@@ -84,9 +72,6 @@ ROL_PERMISOS = {
     },
 }
 
-# ──────────────────────────────────────────────
-# Decoradores
-# ──────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -96,7 +81,6 @@ def login_required(f):
     return decorated
 
 def rol_required(*roles_permitidos):
-    """Permite acceso solo a los roles especificados."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -104,32 +88,26 @@ def rol_required(*roles_permitidos):
                 return redirect(url_for('login'))
             rol_actual = session.get('rol', '')
             if rol_actual not in roles_permitidos:
-                flash(f'Acceso denegado: tu rol ({rol_actual}) no tiene permiso para esta acción.', 'danger')
+                flash(f'Acceso denegado: tu rol ({rol_actual}) no tiene permiso para esta accion.', 'danger')
                 return redirect(url_for('dashboard'))
             return f(*args, **kwargs)
         return decorated
     return decorator
 
 def puede_acceder(endpoint):
-    """Verifica si el usuario en sesión puede acceder al endpoint dado."""
     rol = session.get('rol', '')
     return endpoint in ROL_PERMISOS.get(rol, set())
 
-# Hacer disponible en templates
 app.jinja_env.globals['puede_acceder'] = puede_acceder
 
-# ──────────────────────────────────────────────
-# Inicializar usuarios de prueba con hashes reales
-# ──────────────────────────────────────────────
 def init_usuarios():
-    """Crea/actualiza los usuarios de prueba con contraseñas hasheadas reales."""
     usuarios_prueba = [
-        ('admin',             'admin123',   'admin'),
-        ('admin_usuario',     'secret123',  'admin'),
-        ('supervisor_usuario','secret123',  'supervisor'),
-        ('vendedor_usuario',  'secret123',  'vendedor'),
-        ('bodeguero_usuario', 'secret123',  'bodeguero'),
-        ('reportes_usuario',  'secret123',  'reportes'),
+        ('admin',             'admin123',  'admin'),
+        ('admin_usuario',     'secret123', 'admin'),
+        ('supervisor_usuario','secret123', 'supervisor'),
+        ('vendedor_usuario',  'secret123', 'vendedor'),
+        ('bodeguero_usuario', 'secret123', 'bodeguero'),
+        ('reportes_usuario',  'secret123', 'reportes'),
     ]
     try:
         with app.app_context():
@@ -143,30 +121,26 @@ def init_usuarios():
                     )
                     db.session.add(nuevo)
                 else:
-                    # Actualizar hash si el guardado en seed es placeholder
                     if not u.password_hash.startswith('scrypt') and not u.password_hash.startswith('pbkdf2'):
                         u.password_hash = generate_password_hash(password)
             db.session.commit()
-            print('Usuarios de prueba inicializados correctamente.')
+            print('Usuarios de prueba inicializados.')
     except Exception as e:
         print(f'Error inicializando usuarios: {e}')
 
-# ──────────────────────────────────────────────
-# AUTH
-# ──────────────────────────────────────────────
+# ── AUTH ──────────────────────────────────────────────────────
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        # ORM - CRUD operación 1: READ usuario
         u = Usuario.query.filter_by(username=username).first()
         if u and check_password_hash(u.password_hash, password):
             session['user_id']  = u.id_usuario
             session['username'] = u.username
             session['rol']      = u.rol
             return redirect(url_for('dashboard'))
-        flash('Usuario o contraseña incorrectos', 'danger')
+        flash('Usuario o contrasena incorrectos', 'danger')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -174,9 +148,7 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# ──────────────────────────────────────────────
-# DASHBOARD
-# ──────────────────────────────────────────────
+# ── DASHBOARD ─────────────────────────────────────────────────
 @app.route('/')
 @login_required
 def dashboard():
@@ -207,9 +179,7 @@ def dashboard():
                            total_clientes=total_clientes,
                            ultimas_ventas=ultimas_ventas)
 
-# ──────────────────────────────────────────────
-# PRODUCTOS  (ORM para CREATE, UPDATE, DELETE)
-# ──────────────────────────────────────────────
+# ── PRODUCTOS ─────────────────────────────────────────────────
 @app.route('/productos')
 @login_required
 def productos():
@@ -224,7 +194,6 @@ def productos():
     """)
     productos_list = cur.fetchall()
     cur.close(); conn.close()
-    # ORM - CRUD operación 2: READ categorias y proveedores
     categorias  = Categoria.query.order_by(Categoria.nombre).all()
     proveedores = Proveedor.query.order_by(Proveedor.nombre).all()
     return render_template('productos.html',
@@ -240,7 +209,6 @@ def producto_nuevo():
     if not d.get('nombre') or not d.get('precio') or not d.get('stock'):
         flash('Nombre, precio y stock son obligatorios', 'danger')
         return redirect(url_for('productos'))
-    # Usar stored procedure sp_crear_producto
     conn = get_db()
     conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -266,7 +234,6 @@ def producto_nuevo():
 @rol_required('admin', 'supervisor')
 def producto_editar(pid):
     d = request.form
-    # ORM - CRUD operación 3: UPDATE producto
     try:
         p = Producto.query.get_or_404(pid)
         p.nombre       = d['nombre']
@@ -286,7 +253,6 @@ def producto_editar(pid):
 @login_required
 @rol_required('admin')
 def producto_eliminar(pid):
-    # ORM - CRUD operación 4: DELETE producto
     try:
         p = Producto.query.get_or_404(pid)
         db.session.delete(p)
@@ -294,12 +260,10 @@ def producto_eliminar(pid):
         flash('Producto eliminado', 'success')
     except Exception as e:
         db.session.rollback()
-        flash(f'Error al eliminar (¿tiene ventas asociadas?): {e}', 'danger')
+        flash(f'Error al eliminar: {e}', 'danger')
     return redirect(url_for('productos'))
 
-# ──────────────────────────────────────────────
-# CLIENTES  (ORM para CREATE y UPDATE)
-# ──────────────────────────────────────────────
+# ── CLIENTES ──────────────────────────────────────────────────
 @app.route('/clientes')
 @login_required
 @rol_required('admin', 'supervisor', 'vendedor', 'reportes')
@@ -324,7 +288,6 @@ def cliente_nuevo():
     if not d.get('nombre'):
         flash('El nombre es obligatorio', 'danger')
         return redirect(url_for('clientes'))
-    # ORM - CRUD operación 5: CREATE cliente
     try:
         c = Cliente(nombre=d['nombre'], email=d.get('email'),
                     telefono=d.get('telefono'), direccion=d.get('direccion'))
@@ -341,7 +304,6 @@ def cliente_nuevo():
 @rol_required('admin', 'supervisor', 'vendedor')
 def cliente_editar(cid):
     d = request.form
-    # ORM - CRUD operación 6: UPDATE cliente
     try:
         c = Cliente.query.get_or_404(cid)
         c.nombre    = d['nombre']
@@ -359,7 +321,6 @@ def cliente_editar(cid):
 @login_required
 @rol_required('admin')
 def cliente_eliminar(cid):
-    # Usar stored procedure sp_eliminar_cliente (con validación de ventas)
     conn = get_db()
     conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -376,9 +337,7 @@ def cliente_eliminar(cid):
         cur.close(); conn.close()
     return redirect(url_for('clientes'))
 
-# ──────────────────────────────────────────────
-# VENTAS (stored procedure sp_registrar_venta)
-# ──────────────────────────────────────────────
+# ── VENTAS ────────────────────────────────────────────────────
 @app.route('/ventas')
 @login_required
 @rol_required('admin', 'supervisor', 'vendedor', 'bodeguero', 'reportes')
@@ -398,7 +357,6 @@ def ventas():
     """)
     ventas_list = cur.fetchall()
     cur.close(); conn.close()
-    # ORM para listas de selección
     clientes_list  = Cliente.query.order_by(Cliente.nombre).all()
     empleados_list = Empleado.query.order_by(Empleado.nombre).all()
     productos_list = Producto.query.filter(Producto.stock > 0).order_by(Producto.nombre).all()
@@ -412,17 +370,13 @@ def ventas():
 @login_required
 @rol_required('admin', 'supervisor', 'vendedor')
 def venta_nueva():
-    """Registra venta llamando al stored procedure sp_registrar_venta con transacción explícita."""
     id_cliente  = request.form.get('id_cliente')
     id_empleado = request.form.get('id_empleado')
     ids_prod    = request.form.getlist('producto_id[]')
     cantidades  = request.form.getlist('cantidad[]')
-
     if not id_cliente or not id_empleado or not ids_prod:
         flash('Faltan datos para registrar la venta', 'danger')
         return redirect(url_for('ventas'))
-
-    # Construir JSON de items para el SP
     items = []
     for pid, qty in zip(ids_prod, cantidades):
         try:
@@ -431,55 +385,45 @@ def venta_nueva():
                 items.append({'id_producto': int(pid), 'cantidad': qty_int})
         except ValueError:
             pass
-
     if not items:
-        flash('No se seleccionó ningún producto válido', 'danger')
+        flash('No se selecciono ningun producto valido', 'danger')
         return redirect(url_for('ventas'))
-
     conn = get_db()
     conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("BEGIN")   # ── BEGIN EXPLÍCITO ──
+        cur.execute("BEGIN")
         cur.execute(
             "SELECT * FROM sp_registrar_venta(%s, %s, %s)",
             (int(id_cliente), int(id_empleado), json.dumps(items))
         )
         result = cur.fetchone()
-        conn.commit()          # ── COMMIT ──
+        conn.commit()
         flash(result['p_mensaje'], 'success')
     except Exception as e:
-        conn.rollback()        # ── ROLLBACK ──
-        msg = str(e)
-        if 'ERROR:' in msg:
-            msg = msg.split('ERROR:')[-1].strip()
-        flash(f'Error al registrar venta (se canceló): {msg}', 'danger')
+        conn.rollback()
+        msg = str(e).split('ERROR:')[-1].strip()
+        flash(f'Error al registrar venta (se cancelo): {msg}', 'danger')
     finally:
         conn.autocommit = True
         cur.close(); conn.close()
     return redirect(url_for('ventas'))
 
-# ──────────────────────────────────────────────
-# INVENTARIO (solo bodeguero y admin/supervisor)
-# ──────────────────────────────────────────────
+# ── INVENTARIO ────────────────────────────────────────────────
 @app.route('/inventario')
 @login_required
 @rol_required('admin', 'supervisor', 'bodeguero')
 def inventario():
-    # ORM - CRUD operación 7: READ productos para inventario
-    productos_list = Producto.query.join(Categoria).join(Proveedor)\
-        .order_by(Producto.nombre).all()
+    productos_list = Producto.query.join(Categoria).join(Proveedor).order_by(Producto.nombre).all()
     return render_template('inventario.html', productos=productos_list)
 
 @app.route('/inventario/ajustar', methods=['POST'])
 @login_required
 @rol_required('admin', 'supervisor', 'bodeguero')
 def ajustar_stock():
-    """Ajusta stock llamando al stored procedure sp_ajustar_stock."""
     id_producto = request.form.get('id_producto')
     cantidad    = request.form.get('cantidad')
     motivo      = request.form.get('motivo', 'Ajuste manual')
-
     conn = get_db()
     conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -505,11 +449,9 @@ def ajustar_stock():
 @login_required
 @rol_required('admin', 'supervisor', 'bodeguero')
 def transferir_stock():
-    """Transfiere stock entre productos usando sp_transferir_stock (con ROLLBACK)."""
     id_origen  = request.form.get('id_origen')
     id_destino = request.form.get('id_destino')
     cantidad   = request.form.get('cantidad')
-
     conn = get_db()
     conn.autocommit = False
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -525,20 +467,17 @@ def transferir_stock():
     except Exception as e:
         conn.rollback()
         msg = str(e).split('ERROR:')[-1].strip()
-        flash(f'Error en transferencia (se canceló): {msg}', 'danger')
+        flash(f'Error en transferencia (se cancelo): {msg}', 'danger')
     finally:
         conn.autocommit = True
         cur.close(); conn.close()
     return redirect(url_for('inventario'))
 
-# ──────────────────────────────────────────────
-# EMPLEADOS (ORM para todos los CRUD)
-# ──────────────────────────────────────────────
+# ── EMPLEADOS ─────────────────────────────────────────────────
 @app.route('/empleados')
 @login_required
 @rol_required('admin', 'supervisor')
 def empleados():
-    # ORM - CRUD operación 8: READ empleados
     emp = Empleado.query.order_by(Empleado.nombre).all()
     return render_template('empleados.html', empleados=emp)
 
@@ -550,7 +489,6 @@ def empleado_nuevo():
     if not d.get('nombre'):
         flash('El nombre es obligatorio', 'danger')
         return redirect(url_for('empleados'))
-    # ORM - CRUD operación 9: CREATE empleado
     try:
         e = Empleado(nombre=d['nombre'], cargo=d.get('cargo'),
                      email=d.get('email'), telefono=d.get('telefono'))
@@ -567,7 +505,6 @@ def empleado_nuevo():
 @rol_required('admin', 'supervisor')
 def empleado_editar(eid):
     d = request.form
-    # ORM - CRUD operación 10: UPDATE empleado
     try:
         e = Empleado.query.get_or_404(eid)
         e.nombre   = d['nombre']
@@ -585,7 +522,6 @@ def empleado_editar(eid):
 @login_required
 @rol_required('admin')
 def empleado_eliminar(eid):
-    # ORM - CRUD operación 11: DELETE empleado
     try:
         e = Empleado.query.get_or_404(eid)
         db.session.delete(e)
@@ -593,22 +529,18 @@ def empleado_eliminar(eid):
         flash('Empleado eliminado', 'success')
     except Exception as ex:
         db.session.rollback()
-        flash(f'Error (¿tiene ventas?): {ex}', 'danger')
+        flash(f'Error: {ex}', 'danger')
     return redirect(url_for('empleados'))
 
-# ──────────────────────────────────────────────
-# REPORTES
-# ──────────────────────────────────────────────
+# ── REPORTES ──────────────────────────────────────────────────
 @app.route('/reportes')
 @login_required
 @rol_required('admin', 'supervisor', 'reportes')
 def reportes():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
     cur.execute("SELECT * FROM vista_reporte_ventas ORDER BY ingresos_totales DESC LIMIT 20")
     reporte_productos = cur.fetchall()
-
     cur.execute("""
         SELECT c.nombre AS categoria,
                COUNT(DISTINCT v.id_venta) AS num_ventas,
@@ -623,7 +555,6 @@ def reportes():
         ORDER BY total_ingresos DESC
     """)
     reporte_categorias = cur.fetchall()
-
     cur.execute("""
         WITH gasto_clientes AS (
             SELECT c.id_cliente, c.nombre,
@@ -636,14 +567,15 @@ def reportes():
         SELECT * FROM gasto_clientes ORDER BY total_gastado DESC LIMIT 5
     """)
     top_clientes = cur.fetchall()
-
-    # Llamar al stored procedure sp_reporte_ventas_periodo
-    cur.execute(
-        "SELECT * FROM sp_reporte_ventas_periodo(%s, %s)",
-        ('2026-01-01 00:00:00', '2026-12-31 23:59:59')
-    )
-    resumen_sp = cur.fetchone()
-
+    resumen_sp = None
+    try:
+        cur.execute(
+            "SELECT * FROM sp_reporte_ventas_periodo(%s::TIMESTAMP, %s::TIMESTAMP)",
+            ('2026-01-01 00:00:00', '2026-12-31 23:59:59')
+        )
+        resumen_sp = cur.fetchone()
+    except Exception:
+        pass
     cur.close(); conn.close()
     return render_template('reportes.html',
                            reporte_productos=reporte_productos,
@@ -669,7 +601,6 @@ def exportar_csv():
     return Response(output.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=reporte_ventas.csv'})
 
-# ──────────────────────────────────────────────
 if __name__ == '__main__':
     with app.app_context():
         init_usuarios()

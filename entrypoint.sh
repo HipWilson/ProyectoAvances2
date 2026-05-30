@@ -5,12 +5,12 @@ set -e
 sleep 2
 
 # Crear usuarios si no existen
-python -c "
-import sys
-sys.path.insert(0, '/app')
-from backend.app import init_usuarios()
-init_usuarios()
-print('Usuarios inicializados correctamente.')
+python3 -c "
+content = '#!/bin/sh\nset -e\nsleep 2\npython -c \"import sys; sys.path.insert(0, /app); from backend.app import init_usuarios; init_usuarios()\"\nexec python backend/app.py\n'
+content = content.replace('/app', \"'/app'\")
+with open('entrypoint.sh', 'w') as f:
+    f.write(content)
+print('OK')
 "
 
 # Arrancar Flask

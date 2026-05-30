@@ -15,26 +15,70 @@
       <span class="brand-icon">◈</span>
       <span class="brand-text">TiendaDB</span>
     </div>
+
+    <!-- Badge de rol visible -->
+    <div style="padding:.4rem 1.4rem .8rem; border-bottom:1px solid var(--border);">
+      <span class="badge" style="font-size:.72rem;">
+        {{ session.rol | upper }}
+      </span>
+    </div>
+
     <ul class="nav-links">
-      <li><a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">
+      <!-- Dashboard: todos los roles -->
+      <li><a href="{{ url_for('dashboard') }}"
+             class="{{ 'active' if request.endpoint == 'dashboard' }}">
         <span class="nav-icon">⬡</span> Dashboard
       </a></li>
-      <li><a href="{{ url_for('productos') }}" class="{{ 'active' if request.endpoint == 'productos' }}">
+
+      <!-- Productos: todos menos solo-reportes -->
+      {% if puede_acceder('productos') %}
+      <li><a href="{{ url_for('productos') }}"
+             class="{{ 'active' if request.endpoint == 'productos' }}">
         <span class="nav-icon">⬡</span> Productos
       </a></li>
-      <li><a href="{{ url_for('clientes') }}" class="{{ 'active' if request.endpoint == 'clientes' }}">
+      {% endif %}
+
+      <!-- Inventario: admin, supervisor, bodeguero -->
+      {% if puede_acceder('inventario') %}
+      <li><a href="{{ url_for('inventario') }}"
+             class="{{ 'active' if request.endpoint == 'inventario' }}">
+        <span class="nav-icon">⬡</span> Inventario
+      </a></li>
+      {% endif %}
+
+      <!-- Clientes: admin, supervisor, vendedor, reportes -->
+      {% if puede_acceder('clientes') %}
+      <li><a href="{{ url_for('clientes') }}"
+             class="{{ 'active' if request.endpoint == 'clientes' }}">
         <span class="nav-icon">⬡</span> Clientes
       </a></li>
-      <li><a href="{{ url_for('empleados') }}" class="{{ 'active' if request.endpoint == 'empleados' }}">
+      {% endif %}
+
+      <!-- Empleados: solo admin y supervisor -->
+      {% if puede_acceder('empleados') %}
+      <li><a href="{{ url_for('empleados') }}"
+             class="{{ 'active' if request.endpoint == 'empleados' }}">
         <span class="nav-icon">⬡</span> Empleados
       </a></li>
-      <li><a href="{{ url_for('ventas') }}" class="{{ 'active' if request.endpoint == 'ventas' }}">
+      {% endif %}
+
+      <!-- Ventas: todos menos solo-reportes -->
+      {% if puede_acceder('ventas') %}
+      <li><a href="{{ url_for('ventas') }}"
+             class="{{ 'active' if request.endpoint == 'ventas' }}">
         <span class="nav-icon">⬡</span> Ventas
       </a></li>
-      <li><a href="{{ url_for('reportes') }}" class="{{ 'active' if request.endpoint == 'reportes' }}">
+      {% endif %}
+
+      <!-- Reportes: admin, supervisor, reportes -->
+      {% if puede_acceder('reportes') %}
+      <li><a href="{{ url_for('reportes') }}"
+             class="{{ 'active' if request.endpoint == 'reportes' }}">
         <span class="nav-icon">⬡</span> Reportes
       </a></li>
+      {% endif %}
     </ul>
+
     <div class="sidebar-footer">
       <span class="user-label">{{ session.username }}</span>
       <a href="{{ url_for('logout') }}" class="btn-logout">Salir</a>

@@ -3,14 +3,19 @@
 {% block content %}
 <div class="page-header">
   <h2 class="page-title">Empleados</h2>
+  {% if puede_acceder('empleado_nuevo') %}
   <button class="btn btn-primary" onclick="openModal('modal-nuevo-empleado')">+ Nuevo empleado</button>
+  {% endif %}
 </div>
 
 <div class="section-card">
   <div class="table-wrap">
     <table class="data-table">
       <thead>
-        <tr><th>ID</th><th>Nombre</th><th>Cargo</th><th>Email</th><th>Teléfono</th><th>Acciones</th></tr>
+        <tr>
+          <th>ID</th><th>Nombre</th><th>Cargo</th><th>Email</th><th>Teléfono</th>
+          {% if puede_acceder('empleado_editar') %}<th>Acciones</th>{% endif %}
+        </tr>
       </thead>
       <tbody>
         {% for e in empleados %}
@@ -20,13 +25,23 @@
           <td>{{ e.cargo or '—' }}</td>
           <td>{{ e.email or '—' }}</td>
           <td>{{ e.telefono or '—' }}</td>
+          {% if puede_acceder('empleado_editar') %}
           <td class="actions">
-            <button class="btn btn-sm" onclick='openEditEmpleado({{ e | tojson }})'>Editar</button>
+            <button class="btn btn-sm" onclick="abrirEditEmpleado(
+              {{ e.id_empleado }},
+              {{ e.nombre | tojson }},
+              {{ (e.cargo or '') | tojson }},
+              {{ (e.email or '') | tojson }},
+              {{ (e.telefono or '') | tojson }}
+            )">Editar</button>
+            {% if puede_acceder('empleado_eliminar') %}
             <form method="POST" action="{{ url_for('empleado_eliminar', eid=e.id_empleado) }}"
-                  style="display:inline" onsubmit="return confirm('¿Eliminar empleado?')">
+                  style="display:inline" onsubmit="return confirm('Eliminar empleado?')">
               <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
             </form>
+            {% endif %}
           </td>
+          {% endif %}
         </tr>
         {% else %}
         <tr><td colspan="6" class="empty">No hay empleados</td></tr>
@@ -36,6 +51,7 @@
   </div>
 </div>
 
+{% if puede_acceder('empleado_nuevo') %}
 <div id="modal-nuevo-empleado" class="modal-overlay hidden">
   <div class="modal">
     <h3 class="modal-title">Nuevo Empleado</h3>
@@ -55,7 +71,9 @@
     </form>
   </div>
 </div>
+{% endif %}
 
+{% if puede_acceder('empleado_editar') %}
 <div id="modal-editar-empleado" class="modal-overlay hidden">
   <div class="modal">
     <h3 class="modal-title">Editar Empleado</h3>
@@ -77,13 +95,14 @@
 </div>
 
 <script>
-function openEditEmpleado(e) {
-  document.getElementById('ee-nombre').value   = e.nombre;
-  document.getElementById('ee-cargo').value    = e.cargo    || '';
-  document.getElementById('ee-email').value    = e.email    || '';
-  document.getElementById('ee-telefono').value = e.telefono || '';
-  document.getElementById('form-editar-empleado').action = '/empleados/editar/' + e.id_empleado;
+function abrirEditEmpleado(id, nombre, cargo, email, telefono) {
+  document.getElementById('ee-nombre').value   = nombre;
+  document.getElementById('ee-cargo').value    = cargo;
+  document.getElementById('ee-email').value    = email;
+  document.getElementById('ee-telefono').value = telefono;
+  document.getElementById('form-editar-empleado').action = '/empleados/editar/' + id;
   openModal('modal-editar-empleado');
 }
 </script>
+{% endif %}
 {% endblock %}

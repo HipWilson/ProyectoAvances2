@@ -1,5 +1,5 @@
 # TiendaDB — Proyecto 3
-**Bases de Datos 1 | Wilson Peña - 24760**
+**Bases de Datos | Wilson Peña - 24760**
 
 Sistema web de gestión de inventario y ventas, extendido con seguridad a nivel de base de datos: roles y permisos en el DBMS, stored procedures y ORM (SQLAlchemy).
 
@@ -11,7 +11,7 @@ Stack: **Python/Flask · SQLAlchemy (ORM) · PostgreSQL · HTML/CSS/JS · Docker
 
 ```bash
 # 1. Clonar el repositorio y entrar a la carpeta
-git clone <URL_DEL_REPO>
+git clone <https://github.com/HipWilson/ProyectoAvances2.git>
 cd tienda
 
 # 2. Cambiar a la rama del proyecto
